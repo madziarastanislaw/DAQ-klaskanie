@@ -120,6 +120,7 @@ float estimateFrequencyFFT(int32_t *buf, int n) {
     vReal[i] -= mean;
     vImag[i] = 0.0f;               // część urojona zawsze zerowa dla sygnału rzeczywistego
   }
+  fft.dcRemoval();
 
   // 2. Okno Hamminga ogranicza przecieki widma
   fft.windowing(FFTWindow::Hamming, FFTDirection::Forward);
