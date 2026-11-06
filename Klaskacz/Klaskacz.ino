@@ -68,11 +68,12 @@ void loop() {
   }
 
   // --- Odczyt z mikrofonu ---
-  static int32_t buf[256];
-  size_t bytesRead = 0;
-  i2s_read(I2S_NUM_0, buf, sizeof(buf), &bytesRead, portMAX_DELAY);
+ static int32_t buf[1024];
+size_t bytesRead = 0;
+i2s_read(I2S_NUM_0, buf, sizeof(buf), &bytesRead, portMAX_DELAY);
+int n = bytesRead / sizeof(int32_t);
 
-  int n = bytesRead / sizeof(int32_t);
+float f = estimateFrequency(buf, n, 16000);
   long long sum = 0;
   for (int i = 0; i < n; i++) {
     sum += labs(buf[i] >> 14);   // SPH0645 daje 24 bity wyrównane do 32
@@ -81,7 +82,7 @@ void loop() {
 
   // --- Wyświetlanie ---
   char txt[32];
-  snprintf(txt, sizeof(txt), "Dzwiek: %ld", avg);
+  snprintf(txt, sizeof(txt), "Hz: %.0f", f);
   Serial.println(avg);
 
   int barWidth = constrain(avg / 20, 0, 126);   // skala do kalibracji
@@ -91,4 +92,24 @@ void loop() {
   u8g2.drawFrame(0, 35, 128, 14);
   u8g2.drawBox(1, 36, barWidth, 12);
   u8g2.sendBuffer();
+}
+
+// Zwraca przybliżoną częstotliwość w Hz z bufora próbek
+float estimateFrequency(int32_t *buf, int n, int fs) {
+  // 1. Średnia wartość (usuwa przesunięcie DC)
+  long long sum = 0;
+  for (int i = 0; i < n; i++) sum += buf[i] >> 14;
+  long mean = sum / n;
+
+  // 2. Zliczanie przejść przez zero (względem średniej)
+  int crossings = 0;
+  long prev = (buf[0] >> 14) - mean;
+  for (int i = 1; i < n; i++) {
+    long cur = (buf[i] >> 14) - mean;
+    if ((prev < 0 && cur >= 0) || (prev >= 0 && cur < 0)) crossings++;
+    prev = cur;
+  }
+
+  // Pełny okres to dwa przejścia
+  return (float)crossings * fs / (2.0f * n);
 }
