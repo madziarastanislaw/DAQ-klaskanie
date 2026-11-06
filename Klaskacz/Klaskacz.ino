@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <U8g2lib.h>
 #include <driver/i2s.h>
+#include <arduinoFFT.h>
 
 // ===== PINY (sprawdź z połączeniami na płytce) =====
 #define BUZZER_PIN  27
@@ -73,7 +74,7 @@ size_t bytesRead = 0;
 i2s_read(I2S_NUM_0, buf, sizeof(buf), &bytesRead, portMAX_DELAY);
 int n = bytesRead / sizeof(int32_t);
 
-float f = estimateFrequency(buf, n, 16000);
+float f = estimateFrequencyFFT(buf, n);
   long long sum = 0;
   for (int i = 0; i < n; i++) {
     sum += labs(buf[i] >> 14);   // SPH0645 daje 24 bity wyrównane do 32
@@ -94,22 +95,39 @@ float f = estimateFrequency(buf, n, 16000);
   u8g2.sendBuffer();
 }
 
-// Zwraca przybliżoną częstotliwość w Hz z bufora próbek
-float estimateFrequency(int32_t *buf, int n, int fs) {
-  // 1. Średnia wartość (usuwa przesunięcie DC)
-  long long sum = 0;
-  for (int i = 0; i < n; i++) sum += buf[i] >> 14;
-  long mean = sum / n;
 
-  // 2. Zliczanie przejść przez zero (względem średniej)
-  int crossings = 0;
-  long prev = (buf[0] >> 14) - mean;
-  for (int i = 1; i < n; i++) {
-    long cur = (buf[i] >> 14) - mean;
-    if ((prev < 0 && cur >= 0) || (prev >= 0 && cur < 0)) crossings++;
-    prev = cur;
+
+const uint16_t FFT_N = 1024;      // musi być potęgą dwójki
+const float FFT_FS = 16000.0f;    // częstotliwość próbkowania
+
+float vReal[FFT_N];
+float vImag[FFT_N];
+ArduinoFFT<float> fft(vReal, vImag, FFT_N, FFT_FS);
+
+// Zwraca dominującą częstotliwość w Hz z bufora I2S
+float estimateFrequencyFFT(int32_t *buf, int n) {
+  if (n < 2) return 0;
+
+  // 1. Przepisz próbki do bufora FFT i usuń składową stałą (DC)
+  long long sum = 0;
+  for (int i = 0; i < FFT_N; i++) {
+    int32_t s = (i < n) ? (buf[i] >> 14) : 0;
+    vReal[i] = s;
+    sum += s;
+  }
+  float mean = (float)sum / FFT_N;
+  for (int i = 0; i < FFT_N; i++) {
+    vReal[i] -= mean;
+    vImag[i] = 0.0f;               // część urojona zawsze zerowa dla sygnału rzeczywistego
   }
 
-  // Pełny okres to dwa przejścia
-  return (float)crossings * fs / (2.0f * n);
+  // 2. Okno Hamminga ogranicza przecieki widma
+  fft.windowing(FFTWindow::Hamming, FFTDirection::Forward);
+
+  // 3. FFT, a potem moduł każdego prążka
+  fft.compute(FFTDirection::Forward);
+  fft.complexToMagnitude();
+
+  // 4. Szukaj prążka o największej amplitudzie
+  return fft.majorPeak();
 }
