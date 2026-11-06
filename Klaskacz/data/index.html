@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#e8edf1" />
+  <meta name="description" content="Panel do obsługi projektu Wykrywacz klaskania." />
+  <title>Wykrywacz klaskania | Panel</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Menu główne">
+      <div class="brand">
+        <div>
+          <strong>Wykrywacz klaskania</strong>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Sekcje">
+        <button type="button" class="nav-button active" data-view="live" aria-current="page">Pomiar</button>
+        <button type="button" class="nav-button" data-view="history">Historia</button>
+        <button type="button" class="nav-button" data-view="settings">Ustawienia</button>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div class="mobile-brand">Wykrywacz klaskania</div>
+        <div class="top-right">
+          <span id="mode-label" class="tag-demo">DEMO</span>
+          <span class="connection" id="connection-label"><span class="status-dot" id="connection-dot"></span> Dane symulowane</span>
+        </div>
+      </header>
+
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+      <section id="view-live" class="view" aria-labelledby="live-heading">
+        <div class="heading-row">
+          <div>
+            <h1 id="live-heading">Bieżący pomiar</h1>
+            <p class="subtext">Podgląd sesji, podstawowe statystyki i sterowanie urządzeniem.</p>
+          </div>
+          <div class="session-pill"><span class="pulse-dot"></span><span id="session-label">Gotowość</span></div>
+        </div>
+
+        <div class="hero card">
+          <div class="hero-copy">
+            <span class="label">Czas od startu</span>
+            <div class="big-time" id="elapsed">00:00.00</div>
+            <p id="hero-caption">Urządzenie gotowe do rozpoczęcia pomiaru.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="button button-primary" type="button" id="btn-start">Start</button>
+            <button class="button button-secondary" type="button" id="btn-stop" disabled>Stop</button>
+            <button class="button button-ghost" type="button" id="btn-reset">Reset</button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <article class="card stat"><span class="stat-title">Liczba klaśnięć</span><strong id="stat-claps">0</strong><small>suma wykrytych zdarzeń</small></article>
+          <article class="card stat"><span class="stat-title">CPS</span><strong id="stat-cps">0,00</strong><small>klaśnięcia na sekundę</small></article>
+          <article class="card stat"><span class="stat-title">Średni odstęp</span><strong id="stat-average">—</strong><small>w milisekundach</small></article>
+          <article class="card stat"><span class="stat-title">Ostatni odstęp</span><strong id="stat-last">—</strong><small>ostatnio zmierzony</small></article>
+        </div>
+
+        <div class="two-column">
+          <article class="card chart-card">
+            <div class="card-header">
+              <div>
+                <h2>Odstępy między klaśnięciami</h2>
+                <p>Ostatnie zarejestrowane odstępy [ms]</p>
+              </div>
+            </div>
+            <div class="chart" id="interval-chart" aria-label="Wykres ostatnich odstępów czasowych">
+              <div class="empty">Wykres pojawi się po wykryciu kilku klaśnięć.</div>
+            </div>
+          </article>
+
+          <article class="card details-card">
+            <div class="card-header">
+              <div>
+                <h2>Parametry pracy</h2>
+                <p>Aktualny stan i ustawienia pomiaru</p>
+              </div>
+            </div>
+            <dl class="detail-list">
+              <div><dt>Tryb startu</dt><dd id="detail-start">Po pierwszym klaśnięciu</dd></div>
+              <div><dt>Próg detekcji</dt><dd id="detail-threshold">Automatyczny</dd></div>
+              <div><dt>Wi‑Fi</dt><dd id="detail-wifi">Tryb demonstracyjny</dd></div>
+              <div><dt>Historia</dt><dd id="detail-history">Dane przykładowe</dd></div>
+            </dl>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-history" class="view" aria-labelledby="history-heading" hidden>
+        <div class="heading-row">
+          <div>
+            <h1 id="history-heading">Historia sesji</h1>
+            <p class="subtext">Lista zapisanych pomiarów i możliwość eksportu danych.</p>
+          </div>
+          <button type="button" id="refresh-history" class="button button-secondary">Odśwież</button>
+        </div>
+
+        <div class="card table-card">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Data</th><th>Czas</th><th>Klaśnięcia</th><th>CPS</th><th>Akcja</th></tr>
+              </thead>
+              <tbody id="history-rows"></tbody>
+            </table>
+          </div>
+          <p id="history-empty" class="empty" hidden>Brak zapisanych sesji.</p>
+        </div>
+
+        <article class="card session-detail" id="session-detail" hidden>
+          <div class="card-header">
+            <div>
+              <h2>Szczegóły sesji</h2>
+              <p id="selected-session-title">—</p>
+            </div>
+            <button type="button" id="export-csv" class="button button-primary">Pobierz CSV</button>
+          </div>
+
+          <dl class="detail-list compact">
+            <div><dt>Liczba klaśnięć</dt><dd id="selected-claps">—</dd></div>
+            <div><dt>Średni odstęp</dt><dd id="selected-average">—</dd></div>
+            <div><dt>Czas trwania</dt><dd id="selected-duration">—</dd></div>
+          </dl>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Nr klaśnięcia</th><th>Czas od startu</th><th>Odstęp od poprzedniego</th></tr>
+              </thead>
+              <tbody id="clap-rows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="view-settings" class="view" aria-labelledby="settings-heading" hidden>
+        <div class="heading-row">
+          <div>
+            <h1 id="settings-heading">Ustawienia</h1>
+            <p class="subtext">Konfiguracja progu, trybu startu i źródła danych.</p>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <form id="config-form" class="card settings-card">
+            <h2>Detekcja klaśnięć</h2>
+            <fieldset>
+              <legend>Tryb czułości</legend>
+              <label class="choice">
+                <input type="radio" name="sensitivity" value="auto" checked />
+                <span><strong>Automatyczny</strong><small>Próg dobierany przez urządzenie</small></span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="sensitivity" value="manual" />
+                <span><strong>Manualny</strong><small>Użytkownik ustawia próg samodzielnie</small></span>
+              </label>
+            </fieldset>
+
+            <label class="field" for="threshold">
+              <span>Próg detekcji <strong id="threshold-value">50</strong></span>
+              <input type="range" id="threshold" min="1" max="100" step="1" value="50" disabled />
+              <small>Skala 1–100 jest umowna i może zostać dopasowana po stronie firmware.</small>
+            </label>
+
+            <label class="field" for="start-mode">
+              <span>Tryb rozpoczęcia pomiaru</span>
+              <select id="start-mode">
+                <option value="first_clap">Autostart po pierwszym klaśnięciu</option>
+                <option value="signal">Start na sygnał dźwiękowy</option>
+              </select>
+            </label>
+
+            <button class="button button-primary" type="submit">Zapisz ustawienia</button>
+          </form>
+
+          <div class="card settings-card">
+            <h2>Źródło danych</h2>
+            <p class="card-subtext">Frontend może działać z danymi symulowanymi albo z prawdziwym API urządzenia.</p>
+
+            <label class="choice">
+              <input type="radio" name="source" value="demo" checked />
+              <span><strong>DEMO</strong><small>Uruchomienie bez sprzętu</small></span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="source" value="esp32" />
+              <span><strong>ESP32</strong><small>Połączenie z urządzeniem przez HTTP</small></span>
+            </label>
+
+            <label class="field" for="api-origin">
+              <span>Adres API ESP32</span>
+              <input type="text" id="api-origin" placeholder="Np. http://192.168.4.1" autocomplete="url" />
+              <small>Puste pole oznacza ten sam adres, z którego została otwarta strona.</small>
+            </label>
+
+            <button type="button" class="button button-secondary" id="apply-source">Zastosuj źródło danych</button>
+
+            <div class="hint"><strong>Uwaga:</strong> w trybie offline urządzenie może zapisywać pomiary lokalnie, a historia pojawi się po ponownym połączeniu przez Wi‑Fi.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
