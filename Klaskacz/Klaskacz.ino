@@ -82,16 +82,13 @@ float f = estimateFrequencyFFT(buf, n);
   long avg = (n > 0) ? (long)(sum / n) : 0;
 
   // --- Wyświetlanie ---
-  char txt[32];
-  snprintf(txt, sizeof(txt), "Hz: %.0f", f);
-  Serial.println(avg);
-
-  int barWidth = constrain(avg / 20, 0, 126);   // skala do kalibracji
-
+  char txt_f[32];
+  char txt_A[32];
+  snprintf(txt_f, sizeof(txt_f), "f= %.0f Hz;", f);
+  snprintf(txt_A, sizeof(txt_A), "A = %d", avg);
   u8g2.clearBuffer();
-  u8g2.drawStr(0, 20, txt);
-  u8g2.drawFrame(0, 35, 128, 14);
-  u8g2.drawBox(1, 36, barWidth, 12);
+  u8g2.drawStr(0, 20, txt_f);
+  u8g2.drawStr(0, 50, txt_A);
   u8g2.sendBuffer();
 }
 
