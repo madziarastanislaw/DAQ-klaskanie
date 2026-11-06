@@ -92,6 +92,20 @@ float f = estimateFrequencyFFT(buf, n);
   u8g2.sendBuffer();
 }
 
+float baseline_A = 0;              // poziom tła amplituda
+float baseline_f = 0;              // poziom tła częstotliwość
+const float ALPHA = 0.001f;      // szybkość adaptacji (mała = wolna)
+const float MULT = 4.0f;         // ile razy ponad tło
+
+bool clapDetected(float baseline_A, float baseline_f, float A, float f) {
+  bool loud = A > baseline_A * MULT;
+  bool clap_freq = true;
+  return loud && clap_freq; 
+}
+
+void updateBaseline(float baseline_A, float baseline_f, float A, float f) {
+  baseline_A = baseline_A * (1 - ALPHA) + A * ALPHA;
+}
 
 
 const uint16_t FFT_N = 1024;      // musi być potęgą dwójki
