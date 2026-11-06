@@ -2,9 +2,9 @@
 #include <Arduino.h>
 
 // I2S (mikrofon SPH0645)
-#define PIN_I2S_BCLK   33
-#define PIN_I2S_LRCL   25
-#define PIN_I2S_DOUT   32
+#define PIN_I2S_BCLK   GPIO_NUM_33
+#define PIN_I2S_LRCL   GPIO_NUM_25
+#define PIN_I2S_DOUT   GPIO_NUM_32
 // I2C OLED
 #define PIN_OLED_SDA   21
 #define PIN_OLED_SCL   22
