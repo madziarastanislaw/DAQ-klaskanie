@@ -79,9 +79,6 @@ void audioInit() {
   /* Initialize the channel */
   i2s_channel_init_std_mode(rx_handle, &std_cfg);
 
-  /* Before reading data, start the RX channel first */
-  i2s_channel_enable(rx_handle);
-
   // i2s_config_t cfg = {};
   // cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX);
   // cfg.sample_rate = AUDIO_FS;
@@ -113,7 +110,11 @@ void audioTask(void*) {
   bool prevLoud = false;
   uint32_t lastClapMs = 0;
 
+  /* Before reading data, start the RX channel first */
+  i2s_channel_enable(rx_handle);
+
   for (;;) {
+    // Serial.println("Audio task");
     size_t bytes = 0;
     i2s_channel_read(rx_handle, buf, sizeof(buf), &bytes, portMAX_DELAY);
     uint64_t t_us = esp_timer_get_time();  // znacznik czasu OD RAZU po odczycie bloku
@@ -131,6 +132,8 @@ void audioTask(void*) {
     float A = (float)sumAbs / n;
     gLastPeak = A > 65535 ? 65535 : (uint16_t)A;
     if (blocks == 0) baseline = A;
+
+    // Serial.println(A);
 
     // prog: reczny (z API/przyciskow) albo automatyczny (tlo * MULT)
     uint32_t thr = gThreshold;

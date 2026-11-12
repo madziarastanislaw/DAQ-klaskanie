@@ -16,7 +16,7 @@
 // Buzzer aktywny
 #define PIN_BUZZER     27
 // Bateria
-#define PIN_BAT        4
+// #define PIN_BAT        4
 
 // PARAMETRY
 #define WIFI_SSID         "Klaskacz"
