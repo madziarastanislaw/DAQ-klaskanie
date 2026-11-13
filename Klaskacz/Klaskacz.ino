@@ -27,7 +27,7 @@ void configSave() {
 
 // ================= BUZZER (nieblokujacy) =================
 void beep(uint32_t ms) {
-  digitalWrite(PIN_BUZZER, HIGH);
+  digitalWrite(PIN_BUZZER, LOW);
   buzzerUntil = millis() + ms;
   ignoreUntilUs = esp_timer_get_time() + (uint64_t)(ms + BUZZER_GUARD_MS) * 1000ULL;
 }
@@ -127,11 +127,11 @@ void pollButtons() {
 }
 
 // ================= BATERIA =================
-void updateBattery() {
-  uint32_t mv = 0;
-  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_BAT);
-  gBattery = (mv / 8.0f) * 2.0f / 1000.0f;   // dzielnik 2x100k
-}
+// void updateBattery() {
+//   uint32_t mv = 0;
+//   for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_BAT);
+//   gBattery = (mv / 8.0f) * 2.0f / 1000.0f;   // dzielnik 2x100k
+// }
 
 // ================= OLED =================
 void drawDisplay() {
@@ -192,12 +192,12 @@ void logicTask(void*) {
     }
 
     uint32_t now = millis();
-    if (buzzerUntil && (int32_t)(now - buzzerUntil) >= 0) { digitalWrite(PIN_BUZZER, LOW); buzzerUntil = 0; }
+    if (buzzerUntil && (int32_t)(now - buzzerUntil) >= 0) { digitalWrite(PIN_BUZZER, HIGH); buzzerUntil = 0; }
 
     if (AUTO_STOP_MS && S.state == S_RUNNING && sessionElapsedMs() - S.last_clap_ms > AUTO_STOP_MS)
       handleCommand(CMD_STOP);
 
-    if (now - lastBat > 2000) { lastBat = now; updateBattery(); }
+    // if (now - lastBat > 2000) { lastBat = now; updateBattery(); }
     if (now - lastDraw > 100) { lastDraw = now; drawDisplay(); }   // ~10 Hz
     vTaskDelay(1);
   }
@@ -205,7 +205,7 @@ void logicTask(void*) {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, LOW);
+  pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, HIGH);
   for (int i = 0; i < 4; i++) pinMode(btns[i].pin, btns[i].pin >= 34 ? INPUT : INPUT_PULLUP);  // 34-39: tylko zewnetrzny pull-up
 
   prefs.begin("klask", false);

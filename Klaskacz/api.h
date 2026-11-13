@@ -227,6 +227,7 @@ void wifiInitRoutes() {
   server.on(UriBraces("/api/sessions/{}"), HTTP_GET, sendSessionDetail);
   server.on("/api/time", HTTP_POST, handleTimeSync);
   server.onNotFound([]() {
+    Serial.println(server.uri());
     if (server.method() == HTTP_OPTIONS) { sendCors(); server.send(204); return; }
     if (server.method() == HTTP_GET && !server.uri().startsWith("/api") && serveFile(server.uri())) return;
     sendError(404, "not found");
