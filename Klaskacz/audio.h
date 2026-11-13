@@ -6,13 +6,35 @@
 //  - A liczone PO usunieciu skladowej stalej (SPH0645 ma duze DC),
 //  - bloki 256 probek (16 ms) zamiast 1024 (64 ms) -> dokladniejszy czas klasniec,
 //  - FFT liczone tylko gdy jest kandydat na klasniecie (okno ostatnich 1024 probek),
-//  - detekcja na zboczu narastajacym (jedno klasniecie = jedno zdarzenie, bez podwojnych),
 //  - tlo uczone przed porownaniem i z rozgrzewka (WARMUP_BLOCKS).
+// Zmiany pod szybkie serie klasniec:
+//  - histereza stanu "glosno" (wlaczenie > thr, wylaczenie < thr * LOUD_OFF_RATIO),
+//  - kandydat na klasniecie = przekroczenie progu NA ZBOCZU albo gwaltowny wzrost A
+//    wzgledem poprzedniego bloku (drugie klasniecie na "ogonie" pierwszego tez zadziala),
+//  - tlo jest (prawie) zamrazane gdy jest glosno i przez BASELINE_FREEZE_MS po klasnieciu,
+//    dzieki czemu seria klasniec nie podnosi progu w trybie auto.
 #include "config.h"
 #include "driver/i2s_std.h"
 #include "esp_timer.h"
 #include <math.h>
 #include <arduinoFFT.h>
+
+#ifndef LOUD_OFF_RATIO
+#define LOUD_OFF_RATIO 0.6f  // stan "glosno" wylacza sie dopiero gdy A < thr * ta wartosc
+#endif
+#ifndef RISE_RATIO
+#define RISE_RATIO 1.5f  // A musi byc > prevA * RISE_RATIO, by uznac gwaltowny wzrost
+#endif
+#ifndef RISE_MIN_FRAC
+#define RISE_MIN_FRAC 0.25f  // oraz urosnac o co najmniej thr * ta wartosc (odporne na szum)
+#endif
+#ifndef BASELINE_FREEZE_MS
+#define BASELINE_FREEZE_MS 300  // tlo zamrozone tyle ms po zaakceptowanym klasnieciu
+#endif
+#ifndef BASELINE_FROZEN_FACTOR
+#define BASELINE_FROZEN_FACTOR 0.00f  // w zamrozeniu tlo uczy sie tyle razy wolniej (nie 0, zeby
+                                      // trwale wzrosniety halas w koncu podniosl tlo)
+#endif
 
 QueueHandle_t clapQueue;
 
@@ -55,7 +77,7 @@ float estimateFrequencyFFT() {
 }
 
 // ---------- I2S ----------
-  i2s_chan_handle_t rx_handle;
+i2s_chan_handle_t rx_handle;
 void audioInit() {
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
   i2s_new_channel(&chan_cfg, NULL, &rx_handle);
@@ -78,27 +100,6 @@ void audioInit() {
   };
   /* Initialize the channel */
   i2s_channel_init_std_mode(rx_handle, &std_cfg);
-
-  // i2s_config_t cfg = {};
-  // cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX);
-  // cfg.sample_rate = AUDIO_FS;
-  // cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT;
-  // cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;     // SEL -> GND = lewy kanal
-  // cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
-  // cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
-  // cfg.dma_buf_count = 4;
-  // cfg.dma_buf_len = 256;
-  // cfg.use_apll = false;
-  // i2s_driver_install(I2S_NUM_0, &cfg, 0, NULL);
-
-  // i2s_pin_config_t pins = {};
-  // pins.mck_io_num = I2S_PIN_NO_CHANGE;
-  // pins.bck_io_num = PIN_I2S_BCLK;
-  // pins.ws_io_num = PIN_I2S_LRCL;
-  // pins.data_out_num = I2S_PIN_NO_CHANGE;
-  // pins.data_in_num = PIN_I2S_DOUT;
-  // i2s_set_pin(I2S_NUM_0, &pins);
-  // i2s_zero_dma_buffer(I2S_NUM_0);
 }
 
 // ---------- detektor ----------
@@ -106,15 +107,15 @@ void audioTask(void*) {
   static int32_t buf[AUDIO_BLOCK];
   int32_t dc = 0;
   float baseline = 0;
+  float prevA = 0;
   uint32_t blocks = 0;
-  bool prevLoud = false;
+  bool loudState = false;  // stan "glosno" z histereza
   uint32_t lastClapMs = 0;
 
   /* Before reading data, start the RX channel first */
   i2s_channel_enable(rx_handle);
 
   for (;;) {
-    // Serial.println("Audio task");
     size_t bytes = 0;
     i2s_channel_read(rx_handle, buf, sizeof(buf), &bytes, portMAX_DELAY);
     uint64_t t_us = esp_timer_get_time();  // znacznik czasu OD RAZU po odczycie bloku
@@ -131,9 +132,10 @@ void audioTask(void*) {
     }
     float A = (float)sumAbs / n;
     gLastPeak = A > 65535 ? 65535 : (uint16_t)A;
-    if (blocks == 0) baseline = A;
-
-    // Serial.println(A);
+    if (blocks == 0) {
+      baseline = A;
+      prevA = A;
+    }
 
     // prog: reczny (z API/przyciskow) albo automatyczny (tlo * MULT)
     uint32_t thr = gThreshold;
@@ -144,9 +146,23 @@ void audioTask(void*) {
     }
     gEffThr = thr;
 
-    bool loud = (blocks > WARMUP_BLOCKS) && (A > thr);
     uint32_t nowMs = (uint32_t)(t_us / 1000ULL);
-    if (loud && !prevLoud && (nowMs - lastClapMs) > REFRACTORY_MS) {
+    bool warm = (blocks > WARMUP_BLOCKS);
+
+    // --- stan "glosno" z histereza ---
+    bool wasLoud = loudState;
+    bool aboveThr = (A > thr);
+    if (aboveThr) {
+      loudState = true;
+    } else if (A < thr * LOUD_OFF_RATIO) {
+      loudState = false;
+    }  // pomiedzy progami stan sie utrzymuje
+
+    // --- kandydat: zbocze narastajace LUB gwaltowny wzrost poziomu ---
+    bool rising = (A > prevA * RISE_RATIO) && ((A - prevA) > thr * RISE_MIN_FRAC);
+    bool trigger = warm && aboveThr && (!wasLoud || rising);
+
+    if (trigger && (nowMs - lastClapMs) > REFRACTORY_MS) {
       float f = estimateFrequencyFFT();  // FFT tylko dla kandydata
       gFreq = f;
       if (f >= CLAP_FREQ_MIN_HZ && f <= CLAP_FREQ_MAX_HZ) {
@@ -155,10 +171,18 @@ void audioTask(void*) {
         xQueueSend(clapQueue, &ev, 0);
       }
     }
-    prevLoud = loud;
+    prevA = A;
 
-    // tlo uczymy PO porownaniu (klasniecie nie podnosi progu w tym samym bloku)
-    float alpha = (blocks < WARMUP_BLOCKS) ? 0.05f : BASELINE_ALPHA;
+    // tlo uczymy PO porownaniu. Podczas glosnego stanu i tuz po klasnieciu tlo jest
+    // zamrozone (uczy sie tylko BASELINE_FROZEN_FACTOR razy wolniej), zeby seria
+    // klasniec nie podnosila progu w trybie auto. W rozgrzewce uczymy normalnie.
+    float alpha;
+    if (!warm) {
+      alpha = 0.05f;
+    } else {
+      bool frozen = loudState || ((nowMs - lastClapMs) < BASELINE_FREEZE_MS);
+      alpha = frozen ? BASELINE_ALPHA * BASELINE_FROZEN_FACTOR : BASELINE_ALPHA;
+    }
     baseline = baseline * (1 - alpha) + A * alpha;
     gBaseline = baseline;
     blocks++;
