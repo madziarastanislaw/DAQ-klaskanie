@@ -164,7 +164,8 @@ void serialCommands() {
     else if (ch == 'r') handleCommand(CMD_RESET);
     else if (ch == 'w') setWifi(!wifiOn);
     else if (ch == 'd') dbgDetector = !dbgDetector;
-    else if (ch == 'p') {
+    else if (ch == 'R') rawdumpSetActive(!rawdumpActive());   // zrzut surowego audio (tools/recorder)
+    else if (ch == 'p' && !rawdumpActive()) {
       Serial.printf("%s count=%lu t=%lums avg=%lums min=%lu max=%lu cps=%.2f\n",
         stateName(S.state), (unsigned long)S.count, (unsigned long)sessionElapsedMs(),
         (unsigned long)sessionAvgMs(), (unsigned long)S.interval_min_ms, (unsigned long)S.interval_max_ms,
@@ -186,7 +187,7 @@ void logicTask(void*) {
     if (wifiOn) server.handleClient();
 
     static uint32_t lastDbg = 0;
-    if (dbgDetector && millis() - lastDbg > 200) {
+    if (dbgDetector && !rawdumpActive() && millis() - lastDbg > 200) {
       lastDbg = millis();
       Serial.printf("A=%u base=%d thr=%u f=%d\n", (unsigned)gLastPeak, (int)gBaseline, (unsigned)gEffThr, (int)gFreq);
     }
@@ -204,7 +205,8 @@ void logicTask(void*) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.setTxBufferSize(4096);   // przed begin(); bufor dla zrzutu audio
+  Serial.begin(SERIAL_BAUD);
   pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, HIGH);
   for (int i = 0; i < 4; i++) pinMode(btns[i].pin, btns[i].pin >= 34 ? INPUT : INPUT_PULLUP);  // 34-39: tylko zewnetrzny pull-up
 
@@ -219,12 +221,13 @@ void setup() {
 
   clapQueue = xQueueCreate(32, sizeof(ClapEvent));
   audioInit();
+  rawdumpInit();
   xTaskCreatePinnedToCore(audioTask, "audio", 6144, NULL, 5, NULL, 1);
 
   wifiInitRoutes();
   if (prefs.getBool("wifi", true)) wifiStart();
   xTaskCreatePinnedToCore(logicTask, "logic", 10240, NULL, 1, NULL, 0);
-  Serial.println("Gotowe. Komendy: c s x r w p");
+  Serial.println("Gotowe. Komendy: c s x r w p d R");
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }   // cala praca w zadaniach

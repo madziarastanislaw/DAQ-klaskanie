@@ -19,6 +19,7 @@
 // #define PIN_BAT        4
 
 // PARAMETRY
+#define SERIAL_BAUD       921600        // 921600 wymagane przez zrzut audio (rawdump.h, ~50 KB/s)
 #define WIFI_SSID         "Klaskacz"
 #define WIFI_PASS         "haslo1234"   // min. 8 znakow
 #define MAX_CLAPS_RAM     2000          // ile ostatnich klasniec trzymamy w RAM
