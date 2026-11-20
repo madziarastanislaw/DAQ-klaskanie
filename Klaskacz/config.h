@@ -31,7 +31,7 @@
 #define AUDIO_FS          16000
 #define AUDIO_BLOCK       256           // 16 ms - rozdzielczosc detekcji i czasu
 #define FFT_N             1024          // okno FFT (potega 2) - liczone tylko przy kandydacie na klasniecie
-#define BASELINE_ALPHA    0.00025f      // adaptacja tla na blok 256 (odpowiada 0.001 dla bloku 1024)
+#define BASELINE_ADAPTATION    0.05f      
 #define BASELINE_MULT     4.0f          // tryb auto: prog = tlo * MULT
 #define AUTO_MIN_THR      100.0f        // dolne ograniczenie progu auto
 #define WARMUP_BLOCKS     60            // ~1 s po starcie: uczenie tla, bez detekcji

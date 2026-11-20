@@ -90,13 +90,12 @@ void audioTask(void*) {
   bool loudState = false;
   uint32_t lastClapMs = 0;
 
-  /* Before reading data, start the RX channel first */
   i2s_channel_enable(rx_handle);
 
   for (;;) {
     size_t bytes = 0;
     i2s_channel_read(rx_handle, buf, sizeof(buf), &bytes, portMAX_DELAY);
-    uint64_t t_us = esp_timer_get_time();  // znacznik czasu OD RAZU po odczycie bloku
+    uint64_t t_us = esp_timer_get_time();
     int n = bytes / 4;
     if (n <= 0) continue;
 
@@ -126,7 +125,6 @@ void audioTask(void*) {
     uint32_t nowMs = (uint32_t)(t_us / 1000ULL);
     bool warm = (blocks > WARMUP_BLOCKS);
 
-    bool wasLoud = loudState;
     bool aboveThr = (A > thr);
     if (aboveThr) {
       loudState = true;
@@ -135,10 +133,10 @@ void audioTask(void*) {
     }
 
     bool rising = (A > prevA * RISE_RATIO) && ((A - prevA) > thr * RISE_MIN_FRAC);
-    bool trigger = warm && aboveThr && (!wasLoud || rising);
+    bool trigger = warm && aboveThr;
 
     if (trigger && (nowMs - lastClapMs) > REFRACTORY_MS) {
-      float f = estimateFrequencyFFT();  // FFT tylko dla kandydata
+      float f = estimateFrequencyFFT();
       gFreq = f;
       if (f >= CLAP_FREQ_MIN_HZ && f <= CLAP_FREQ_MAX_HZ) {
         lastClapMs = nowMs;
@@ -148,14 +146,10 @@ void audioTask(void*) {
     }
     prevA = A;
 
-    float alpha;
     if (!warm) {
-      alpha = 0.05f;
-    } else {
-      bool frozen = loudState || ((nowMs - lastClapMs) < BASELINE_FREEZE_MS);
-      alpha = frozen ? 0 : BASELINE_ALPHA;
+      baseline = baseline * (1 - BASELINE_ADAPTATION) + A * BASELINE_ADAPTATION;
     }
-    baseline = baseline * (1 - alpha) + A * alpha;
+    
     gBaseline = baseline;
     blocks++;
   }
