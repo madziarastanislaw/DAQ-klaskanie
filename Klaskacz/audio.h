@@ -1,6 +1,5 @@
 #pragma once
 #include "config.h"
-#include "rawdump.h"
 #include "driver/i2s_std.h"
 #include "esp_timer.h"
 #include <math.h>
@@ -118,7 +117,6 @@ void audioTask(void*) {
       sumAbs += abs(s - dc);
     }
     float A = (float)sumAbs / n;
-    rawdumpAudio(buf, n, t_us);  // zrzut surowych probek przez UART (tylko gdy wlaczony 'R')
     gLastPeak = A > 65535 ? 65535 : (uint16_t)A;
     if (blocks == 0) {
       baseline = A;
@@ -153,9 +151,7 @@ void audioTask(void*) {
     if (trigger && (nowMs - lastClapMs) > REFRACTORY_MS) {
       float f = estimateFrequencyFFT();
       gFreq = f;
-      bool accepted = (f >= CLAP_FREQ_MIN_HZ && f <= CLAP_FREQ_MAX_HZ);
-      rawdumpEvent(t_us, A, (float)thr, baseline, f, accepted);
-      if (accepted) {
+      if (f >= CLAP_FREQ_MIN_HZ && f <= CLAP_FREQ_MAX_HZ) {
         lastClapMs = nowMs;
         ClapEvent ev = { t_us, gLastPeak };
         xQueueSend(clapQueue, &ev, 0);
