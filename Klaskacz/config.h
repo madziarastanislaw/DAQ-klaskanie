@@ -32,10 +32,10 @@
 #define AUDIO_BLOCK       256           // 16 ms - rozdzielczosc detekcji i czasu
 #define FFT_N             1024          // okno FFT (potega 2) - liczone tylko przy kandydacie na klasniecie
 #define BASELINE_ADAPTATION    0.05f      
-#define BASELINE_MULT     4.0f          // tryb auto: prog = tlo * MULT
+#define BASELINE_MULT     2.0f          // tryb auto: prog = tlo * MULT
 #define AUTO_MIN_THR      100.0f        // dolne ograniczenie progu auto
 #define WARMUP_BLOCKS     60            // ~1 s po starcie: uczenie tla, bez detekcji
-#define CLAP_FREQ_MIN_HZ  100             // bramka czestotliwosci dominujacej (0..8000 = wylaczona)
+#define CLAP_FREQ_MIN_HZ  100             
 #define CLAP_FREQ_MAX_HZ  3000
 #define BUZZER_GUARD_MS   150           // tyle ms po pisku ignorujemy detekcje (buzzer != klasniecie)
 

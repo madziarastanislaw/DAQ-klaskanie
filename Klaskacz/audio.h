@@ -132,7 +132,7 @@ void audioTask(void*) {
     bool warm = (blocks > WARMUP_BLOCKS);
 
 
-    //główna logika wykrywania 
+    //główna logika wykrywania
     bool aboveThr = (A > thr);
 
     bool trigger = warm && aboveThr;
