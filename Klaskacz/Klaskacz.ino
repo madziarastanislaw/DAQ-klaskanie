@@ -34,6 +34,10 @@ void beep(uint32_t ms) {
 
 // ================= AUTOMAT STANOW =================
 void handleClap(const ClapEvent& ev) {
+  if (S.competition) {
+    if ((S.state == S_RUNNING || S.state == S_ARMED) && S.t0_us != UINT64_MAX) sessionAddClap(ev);
+    return;
+  }
   if (ev.t_us < ignoreUntilUs) return;        // pisk buzzera / szum po nim
   if (S.state == S_ARMED) {
     if (ev.t_us < armedAtUs) return;          // stare zdarzenie sprzed uzbrojenia
@@ -57,7 +61,55 @@ void startMeasurement() {                     // z IDLE
   }
 }
 
+bool sessionActive() { return S.state == S_ARMED || S.state == S_RUNNING; }
+
+void startCompetition(const String& player, uint32_t seconds) {
+  xQueueReset(clapQueue);
+  sessionBegin(esp_timer_get_time());
+  S.competition = true; S.player = player; S.competition_ms = seconds * 1000;
+  S.state = S_ARMED; S.t0_us = 0;
+  S.countdownEnd_us = esp_timer_get_time() + 3000000ULL;
+}
+
+void competitionTick(uint64_t processed) {
+  if (!S.competition || !sessionActive()) return;
+  uint64_t now = esp_timer_get_time();
+  if (!S.stopping && S.state == S_ARMED && now >= S.countdownEnd_us) {
+    // Start after the ACTUAL buzzer switch-off plus guard (even if HTTP delayed it).
+    if (!S.t0_us) { beep(300); S.t0_us = UINT64_MAX; }
+    else if (S.t0_us == UINT64_MAX && !buzzerUntil) {
+      S.t0_us = now + BUZZER_GUARD_MS * 1000ULL;
+      S.end_us = S.t0_us + S.competition_ms * 1000ULL;
+      S.uptime_ms = S.t0_us / 1000ULL;
+      S.epoch_s = timeValid() ? time(nullptr) : 0;
+    } else if (S.t0_us != UINT64_MAX && now >= S.t0_us) S.state = S_RUNNING;
+  }
+  if ((S.stopping || (S.state == S_RUNNING && now >= S.end_us)) && processed >= S.end_us) {
+    S.completed = !S.stopping;
+    bool reset = S.resetAfter;
+    if (S.t0_us == UINT64_MAX) S.t0_us = 0;
+    sessionFinish(); beep(300);
+    if (reset) sessionClear();
+  }
+}
+
 void handleCommand(Cmd c) {
+  if (S.competition && sessionActive()) {
+    if (c == CMD_STOP || c == CMD_RESET || c == CMD_START_STOP) {
+      S.resetAfter = S.resetAfter || c == CMD_RESET;
+      if (!S.stopping) {
+        uint64_t now = esp_timer_get_time();
+        // Stop after deadline remains a completed trial.
+        bool started = S.t0_us && S.t0_us != UINT64_MAX && now >= S.t0_us;
+        if (!started || now < S.end_us) {
+          S.stopping = true;
+          S.end_us = started ? now : 0;
+          if (!started) S.t0_us = 0;
+        }
+      }
+    }
+    return;
+  }
   bool toggle = (c == CMD_START_STOP);
   if (c == CMD_RESET) {
     if (S.state == S_RUNNING) sessionFinish();   // nie gubimy trwajacej sesji - zapis przed czyszczeniem
@@ -95,6 +147,7 @@ Btn btns[4] = {{PIN_BTN_UP}, {PIN_BTN_DOWN}, {PIN_BTN_START}, {PIN_BTN_RESET}};
 enum { B_UP, B_DOWN, B_START, B_RESET };
 
 void onShort(int id) {
+  if (S.competition && sessionActive() && (id == B_UP || id == B_DOWN)) return;
   switch (id) {
     case B_UP:    configApplyThreshold(gThrUi + THR_UI_STEP); configSave(); break;
     case B_DOWN:  configApplyThreshold((int)gThrUi - THR_UI_STEP); configSave(); break;
@@ -103,6 +156,7 @@ void onShort(int id) {
   }
 }
 void onLong(int id) {
+  if (S.competition && sessionActive()) return;
   if (id == B_RESET && S.state != S_RUNNING) { setWifi(!wifiOn); beep(100); }   // Wi-Fi z "menu"
   if (id == B_UP)   { gAutoSens = !gAutoSens; configSave(); beep(100); }        // auto / reczna czulosc
   if (id == B_DOWN && S.state != S_RUNNING) {                                   // tryb startu
@@ -180,9 +234,11 @@ void logicTask(void*) {
     pollButtons();
     serialCommands();
 
+    uint64_t processed = audioProgress();
     ClapEvent ev;
     while (xQueueReceive(clapQueue, &ev, 0) == pdTRUE) handleClap(ev);
 
+    competitionTick(processed);
     if (wifiOn) server.handleClient();
 
     static uint32_t lastDbg = 0;
@@ -194,7 +250,7 @@ void logicTask(void*) {
     uint32_t now = millis();
     if (buzzerUntil && (int32_t)(now - buzzerUntil) >= 0) { digitalWrite(PIN_BUZZER, HIGH); buzzerUntil = 0; }
 
-    if (AUTO_STOP_MS && S.state == S_RUNNING && sessionElapsedMs() - S.last_clap_ms > AUTO_STOP_MS)
+    if (!S.competition && AUTO_STOP_MS && S.state == S_RUNNING && sessionElapsedMs() - S.last_clap_ms > AUTO_STOP_MS)
       handleCommand(CMD_STOP);
 
     // if (now - lastBat > 2000) { lastBat = now; updateBattery(); }
@@ -217,7 +273,8 @@ void setup() {
   Wire.begin(PIN_OLED_SDA, PIN_OLED_SCL);
   u8g2.begin();
 
-  clapQueue = xQueueCreate(32, sizeof(ClapEvent));
+  clapQueue = xQueueCreate(CLAP_QUEUE_SIZE, sizeof(ClapEvent));
+  if (!clapQueue) { Serial.println("Clap queue allocation failed"); while (true) delay(1000); }
   audioInit();
   xTaskCreatePinnedToCore(audioTask, "audio", 6144, NULL, 5, NULL, 1);
 
