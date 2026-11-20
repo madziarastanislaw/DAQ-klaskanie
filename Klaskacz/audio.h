@@ -19,6 +19,15 @@
 #endif
 
 QueueHandle_t clapQueue;
+// Publication follows queue send, including FFT. Snapshot BEFORE draining the queue.
+portMUX_TYPE audioProgressMux = portMUX_INITIALIZER_UNLOCKED;
+uint64_t audioProcessedUs = 0;
+uint64_t audioProgress() {
+  portENTER_CRITICAL(&audioProgressMux);
+  uint64_t t = audioProcessedUs;
+  portEXIT_CRITICAL(&audioProgressMux);
+  return t;
+}
 
 inline uint32_t thrUiToRaw(uint8_t ui) {
   return (uint32_t)(THR_RAW_MIN * powf(THR_RAW_MAX / THR_RAW_MIN, (ui - 1) / 99.0f));
@@ -88,6 +97,7 @@ void audioTask(void*) {
   float prevA = 0;
   uint32_t blocks = 0;
   uint32_t lastClapMs = 0;
+  bool prevLoud = false;
 
   i2s_channel_enable(rx_handle);
 
@@ -135,7 +145,8 @@ void audioTask(void*) {
     //główna logika wykrywania 
     bool aboveThr = (A > thr);
 
-    bool trigger = warm && aboveThr;
+    // A sustained impulse must not generate another clap every REFRACTORY_MS.
+    bool trigger = warm && aboveThr && !prevLoud;
 
     if (trigger && (nowMs - lastClapMs) > REFRACTORY_MS) {
       float f = estimateFrequencyFFT();
@@ -147,6 +158,7 @@ void audioTask(void*) {
       }
     }
 
+    prevLoud = aboveThr;
     ///////////////////////////
     prevA = A;
 
@@ -156,5 +168,8 @@ void audioTask(void*) {
     
     gBaseline = baseline;
     blocks++;
+    portENTER_CRITICAL(&audioProgressMux);
+    audioProcessedUs = t_us;
+    portEXIT_CRITICAL(&audioProgressMux);
   }
 }

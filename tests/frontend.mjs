@@ -14,6 +14,23 @@ let timeDelay = 0, longHistory = false;
 let config = { sensitivity: 'manual', threshold: 60, start_mode: 'first_clap' };
 let phase = 'idle', synced = false;
 const calls = [];
+let competition = null, competitionOffset = 0;
+const competitionNow = () => Date.now() + competitionOffset;
+function competitionStatus() {
+  if (!competition) return {};
+  const c = competition, now = competitionNow();
+  if (!c.saved && (c.aborted || now >= c.end)) {
+    c.saved = true;
+    sessions.push({ id: 'session-competition-' + sessions.length, mode: 'competition', player: c.player,
+      competition_duration_ms: c.duration, duration_ms: c.aborted ? Math.max(0, now-c.start) : c.duration,
+      clap_count: c.claps.length, completed: !c.aborted, claps: c.claps.map(offset_ms=>({offset_ms})) });
+  }
+  return { mode:'competition', player:c.player, competition_duration_ms:c.duration,
+    state:c.saved ? 'finished' : now<c.start ? 'armed' : 'running',
+    elapsed_ms:Math.max(0,Math.min(c.duration,now-c.start)), clap_count:c.claps.length,
+    remaining_ms:Math.max(0,Math.min(c.duration,c.end-now)),
+    countdown:Math.max(0,Math.ceil((c.start-450-now)/1000)), completed:c.saved && !c.aborted };
+}
 const sessions = [null, '2026-11-12T10:00:00Z'].map((started_at, i) => ({
   id: `session-${i + 1}`, started_at, duration_ms: 1600, clap_count: 3,
   cps: 1.88, avg_interval_ms: 600, claps: [{ offset_ms: 0 }, { offset_ms: 500 }, { offset_ms: 1200 }],
@@ -21,7 +38,7 @@ const sessions = [null, '2026-11-12T10:00:00Z'].map((started_at, i) => ({
 const status = () => ({ state: phase, elapsed_ms: phase === 'running' || phase === 'finished' ? 1600 : 0,
   clap_count: phase === 'running' || phase === 'finished' ? 3 : 0, cps: phase === 'running' ? 1.88 : 0,
   avg_interval_ms: phase === 'running' ? 600 : null, last_interval_ms: phase === 'running' ? 700 : null,
-  intervals_ms: phase === 'running' ? [500, 700] : [], wifi_enabled: true, time_synced: synced, config });
+  intervals_ms: phase === 'running' ? [500, 700] : [], wifi_enabled: true, time_synced: synced, config, ...competitionStatus() });
 const server = createServer(async (req, res) => {
   try {
     const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -39,6 +56,17 @@ const server = createServer(async (req, res) => {
         res.end(json.slice(middle));
       };
       if (!available) return send({ ok: false, error: 'not found' }, 404);
+      if (pathname === '/api/competition/start') {
+        if (competition && !competition.saved || ['armed','running'].includes(phase)) return send({ok:false},409);
+        if (!body.player?.trim() || ![10,15,30,60].includes(body.duration_s)) return send({ok:false},400);
+        competition = {player:body.player, duration:body.duration_s*1000, start:competitionNow()+3450,
+          end:competitionNow()+3450+body.duration_s*1000, claps:[], saved:false};
+        return send({ok:true});
+      }
+      if (pathname === '/api/competition/results') {
+        competitionStatus();
+        return send({complete:true, results:sessions.filter(s=>s.mode==='competition' && s.completed)});
+      }
       if (pathname === '/api/status') {
         const value = invalidStatus ? { state: 'running' } : status();
         if (delay) await new Promise(r => setTimeout(r, delay));
@@ -76,6 +104,11 @@ const server = createServer(async (req, res) => {
       if (pathname.startsWith('/api/session/')) {
         assert.equal(req.method, 'POST');
         const action = pathname.split('/').pop();
+        if (competition && !competition.saved) {
+          if (action === 'start') return send({ok:false},409);
+          competition.aborted = true; competitionStatus();
+        }
+        if (action === 'reset') competition = null;
         if (action === 'start' && ['idle', 'finished'].includes(phase)) phase = config.start_mode === 'signal' ? 'running' : 'armed';
         if (action === 'stop') phase = phase === 'armed' ? 'idle' : phase === 'running' ? 'finished' : phase;
         if (action === 'reset') phase = 'idle';
@@ -153,6 +186,21 @@ try {
   await run('document.querySelector("input[name=sensitivity][value=manual]").click(); $("threshold").value="82"; $("start-mode").value="signal"; saveConfig({preventDefault(){}}); control("start")');
   await check('state.status.state === "running" && state.config.threshold === 82 && !$("threshold").disabled', 'DEMO manual sensitivity and signal start');
   await run('control("stop"); control("reset")');
+  await run('navigate("competition"); $("competition-player").value="Ala DEMO"; startCompetition({preventDefault(){}})');
+  await check('state.status.mode === "competition" && state.status.countdown === 3', 'DEMO competition countdown 3');
+  await run('state.demo.countdownEnd -= 1000; syncCompetitionDemo()');
+  await check('state.status.countdown === 2', 'DEMO competition countdown 2');
+  await run('state.demo.countdownEnd -= 1000; syncCompetitionDemo()');
+  await check('state.status.countdown === 1', 'DEMO competition countdown 1');
+  await run('state.demo.start=performance.now()-15001; state.demo.end=performance.now()-1; state.demo.next=state.demo.start+100; competitionDemoTick()');
+  await check('state.status.state === "finished" && state.status.completed && state.history[0].competition_duration_ms === 15000 && $("competition-ranking").children.length===1', 'DEMO automatic finish and 15s ranking');
+  await navigate(pathToFileURL(join(root, 'wykrywacz_klaskania_www/index.html')).href);
+  await run('navigate("competition")');
+  await check('$("competition-ranking").textContent.includes("Ala DEMO")', 'DEMO persisted results after reload');
+  await run('startCompetition({preventDefault(){}}); control("stop")');
+  await check('!state.history[0].completed && $("competition-ranking").children.length===1', 'DEMO aborted trial excluded');
+  await run('$("competition-duration").value="60"; renderCompetition()');
+  await check('$("competition-ranking").children.length===0', 'ranking isolates time limits');
   assert.equal(calls.filter(c => c.path === '/api/time').length, 0);
   console.log('PASS no time sync in DEMO');
 
@@ -256,8 +304,10 @@ try {
 
   // Simultaneous calls and a slow POST must not produce concurrent sync requests.
   failTime = false; synced = false; timeDelay = 1500;
+  const beforeBusy = calls.filter(c => c.path === '/api/time').length;
   await source('esp32');
   await wait('state.timeSync.busy');
+  await until(() => calls.filter(c => c.path === '/api/time').length > beforeBusy, 'time request reached mock');
   const busyCount = calls.filter(c => c.path === '/api/time').length;
   await run('Promise.all([syncTime(state.sourceVersion), syncTime(state.sourceVersion), syncTime(state.sourceVersion)])');
   await pause(650);
@@ -324,9 +374,36 @@ try {
   await check('state.source === "demo"', 'manual source choice wins over delayed auto detection');
   delay = 0;
 
+  // ESP32 mock keeps the competition clock and results while the browser disconnects.
+  phase = 'idle'; competition = null;
+  await source('esp32'); await wait('state.connectionOk');
+  await run('navigate("competition"); $("competition-duration").value="15"; $("competition-player").value="Ala ESP32"; startCompetition({preventDefault(){}})');
+  await wait('state.status.mode === "competition" && state.status.countdown === 3');
+  competitionOffset += 1100; await run('pollStatus()');
+  await wait('state.status.countdown === 2');
+  competitionOffset += 2400; await run('pollStatus()');
+  await wait('state.status.state === "running"');
+  competition.claps.push(0, 60, 120, 14999);
+  available = false; await wait('!state.connectionOk');
+  await check('$("competition-start").disabled && $("competition-message").textContent.includes("nieaktualne")', 'competition disconnect shows stale status');
+  competitionOffset += 15000; available = true;
+  await wait('state.connectionOk && state.status.completed');
+  await run('refreshRanking()');
+  await check('$("competition-ranking").textContent.includes("Ala ESP32: 4")', 'device contest finishes offline and reads persisted ranking');
+  await navigate(origin);
+  await wait('state.source === "esp32" && state.connectionOk');
+  await run('navigate("competition"); refreshRanking()');
+  await check('$("competition-ranking").textContent.includes("Ala ESP32: 4") && !$("competition-ranking").textContent.includes("DEMO")', 'reload restores ESP32 results separately from DEMO');
+  await run('startCompetition({preventDefault(){}})');
+  await wait('state.status.state === "armed"');
+  await run('control("stop"); refreshRanking()');
+  await wait('state.status.state === "finished" && state.ranking !== null', 'aborted status and ranking received');
+  await check('state.status.state === "finished" && !state.status.completed && $("competition-ranking").children.length===1', 'ESP32 manual abort excluded from saved ranking');
+  await run('control("reset")'); await source('demo');
+
   for (const width of [390, 320]) {
     await cdp('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
-    for (const view of ['live', 'history', 'settings']) {
+    for (const view of ['live', 'competition', 'history', 'settings']) {
       await run(`navigate('${view}')`);
       await check('document.documentElement.scrollWidth <= window.innerWidth', `mobile ${width}px ${view} has no page overflow`);
     }

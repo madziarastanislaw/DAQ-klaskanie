@@ -44,4 +44,18 @@ Dodatkowo wykonano `node --check` dla aplikacji i testów oraz `git diff --check
 7. Sprawdzić dotyk, czytelność, tabelę przewijaną poziomo wewnątrz karty i pobieranie plików na fizycznym telefonie, w pionie i poziomie.
 8. Przy korzystaniu z frontendu na innym serwerze ustawić pełny adres API i sprawdzić CORS (w tym preflight PUT/POST), ograniczenia HTTPS/HTTP oraz uprawnienia przeglądarki do sieci lokalnej. Najprostsza konfiguracja to strona i API na ESP32 pod jednym adresem.
 
-Testy sprzętowe i testy na fizycznym telefonie nie zostały wykonane. Nie zmieniono firmware, pinów, detektora ani kontraktu API. W wyniku przeglądu nie potwierdzono osobnego błędu firmware wymagającego zmiany dla tej integracji.
+## Tryb konkursowy
+
+`node tests/competition-firmware.mjs` kompiluje na komputerze rzeczywiste funkcje z `session.h`, `Klaskacz.ino` oraz fragment detektora z `audio.h`. Wymaga MSVC z Visual Studio 2022 Community (inną ścieżkę można wskazać przez `VSDEVCMD`). Zegar, kolejka i zapis są zastąpione atrapami. Test obejmuje okno 15 s, dodatkowo 10/30/60 s, odliczanie, buzzer i ochronę, granice `[start, end)`, opróżnienie kolejki przy opóźnionym FFT, opóźnienie obsługi Wi-Fi, Stop/Reset, blokadę kolejnej sesji, szybkie zdarzenia, próg i czas refrakcji detektora z aktualnego maina oraz regresję zwykłego pomiaru. Atrapa zapisu sprawdza przekazanie wyniku do zapisu; nie wykonuje rzeczywistego LittleFS ani ArduinoJson.
+
+`node tests/frontend.mjs` dodatkowo sprawdza konkurs DEMO, 3/2/1, automatyczny koniec, przerwanie, rozdzielenie limitów rankingu i trwałość DEMO po przeładowaniu. Mock ESP32 sprawdza start REST, odliczanie, utratę połączenia podczas konkursu, ukończenie na urządzeniu przy odłączonej stronie, odczyt zapisanych wyników po przeładowaniu i wykluczenie przerwanej próby. Mock nie dowodzi działania firmware. Emulacja telefonu obejmuje również zakładkę Konkurs.
+
+Na fizycznym ESP32 należy dodatkowo:
+
+1. Skompilować i wgrać firmware z dotychczasowymi bibliotekami; sprawdzić przydział większej kolejki zdarzeń (2464 wpisy) i wolną pamięć.
+2. Sprawdzić 10/15/30/60 s, sygnał i rzeczywisty czas ochrony mikrofonu. Klaśnięcia w odliczaniu, podczas buzzera i po limicie mają być pomijane; pierwsze po ochronie i ostatnie przed końcem zaliczane.
+3. Sprawdzić szybkie serie i echo buzzera, porównując nagranie/Serial z CSV. Rozdzielczość detektora nadal wynosi około 16 ms, czas refrakcji 25 ms.
+4. Rozłączyć Wi-Fi podczas próby i ponownie połączyć po limicie. Sprawdzić zapis dokładnego limitu i wynik niezależny od przeglądarki; obciążyć pobieraniem długiej historii.
+5. Przerwać przyciskiem Stop i Reset w odliczaniu i podczas pomiaru; sprawdzić zapis `completed:false` i brak w rankingu. Zweryfikować odmowę drugiego Start i zmian konfiguracji podczas konkursu.
+6. Zrestartować ESP32 po ukończeniu, sprawdzić JSON/CSV LittleFS i ranking, również przy ponad 50 zapisanych próbach. Stare metadane bez `mode` mają być prezentowane jako zwykły pomiar.
+7. Potwierdzić oba zwykłe tryby startu, przyciski, OLED, Wi-Fi, CSV i historię oraz zachowanie przy braku miejsca w LittleFS.
