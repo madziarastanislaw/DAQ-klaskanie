@@ -87,7 +87,6 @@ void audioTask(void*) {
   float baseline = 0;
   float prevA = 0;
   uint32_t blocks = 0;
-  bool loudState = false;
   uint32_t lastClapMs = 0;
 
   i2s_channel_enable(rx_handle);
@@ -114,25 +113,28 @@ void audioTask(void*) {
       prevA = A;
     }
 
+    //próg
+
     uint32_t thr = gThreshold;
     if (gAutoSens) {
       float t = baseline * BASELINE_MULT;
-      if (t < AUTO_MIN_THR) t = AUTO_MIN_THR;
+      if (t < AUTO_MIN_THR) {
+        t = AUTO_MIN_THR;
+      }
       thr = (uint32_t)t;
     }
     gEffThr = thr;
 
+
+    ////////////////////////////
+
     uint32_t nowMs = (uint32_t)(t_us / 1000ULL);
     bool warm = (blocks > WARMUP_BLOCKS);
 
-    bool aboveThr = (A > thr);
-    if (aboveThr) {
-      loudState = true;
-    } else if (A < thr * LOUD_OFF_RATIO) {
-      loudState = false;
-    }
 
-    bool rising = (A > prevA * RISE_RATIO) && ((A - prevA) > thr * RISE_MIN_FRAC);
+    //główna logika wykrywania 
+    bool aboveThr = (A > thr);
+
     bool trigger = warm && aboveThr;
 
     if (trigger && (nowMs - lastClapMs) > REFRACTORY_MS) {
@@ -144,6 +146,8 @@ void audioTask(void*) {
         xQueueSend(clapQueue, &ev, 0);
       }
     }
+
+    ///////////////////////////
     prevA = A;
 
     if (!warm) {
