@@ -24,6 +24,8 @@
 #define MAX_CLAPS_RAM     2000          // ile ostatnich klasniec trzymamy w RAM
 #define FLASH_BATCH       50            // zapis do LittleFS co N klasniec
 #define REFRACTORY_MS     25            // minimalny odstep miedzy klasnieciami
+// Capacity for a full 60 s competition at the current detector rate.
+#define CLAP_QUEUE_SIZE   (60000 / REFRACTORY_MS + 64)
 #define STATUS_INTERVALS  50            // ile ostatnich odstepow w /api/status
 #define AUTO_STOP_MS      0             // 0 = wylaczone; np. 10000 = stop po 10 s ciszy
 #define LONG_PRESS_MS     1500

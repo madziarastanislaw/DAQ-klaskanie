@@ -12,6 +12,7 @@ const state = {
   demo: { phase: 'idle', startedAt: null, endedAt: null, claps: [], nextClapAt: 0 },
   status: blankStatus(),
   history: makeSeedHistory(),
+  ranking: null, rankingRequest: 0, competitionBusy: false,
   selected: null,
   pollTimer: null,
   pollBusy: false,
@@ -89,6 +90,7 @@ function navigate(view) {
     if (active) btn.setAttribute('aria-current', 'page'); else btn.removeAttribute('aria-current');
   });
   if (view === 'history') refreshHistory();
+  if (view === 'competition') refreshRanking();
 }
 
 function renderConnection() {
@@ -103,6 +105,7 @@ function renderConnection() {
 }
 
 function renderStatus() {
+  renderCompetition();
   const s = state.status;
   const phase = s.state || 'idle';
   const offline = state.source === 'esp32' && !state.connectionOk;
@@ -163,6 +166,7 @@ function renderConfigForm() {
 
 function syncDemoStatus() {
   const demo = state.demo;
+  if (demo.competition) { syncCompetitionDemo(); return; }
   const elapsed = demo.startedAt ? (demo.endedAt || Date.now()) - demo.startedAt : 0;
   const intervals = intervalData(demo.claps);
   state.status = {
@@ -180,6 +184,7 @@ function syncDemoStatus() {
 
 function demoStart() {
   const d = state.demo;
+  d.competition = false;
   d.claps = []; d.endedAt = null; d.startedAt = null;
   d.phase = state.config.start_mode === 'first_clap' ? 'armed' : 'running';
   if (d.phase === 'running') d.startedAt = Date.now();
@@ -188,6 +193,7 @@ function demoStart() {
 }
 function demoStop() {
   const d = state.demo;
+  if (d.competition) { finishDemoCompetition(false); return; }
   if (d.phase !== 'armed' && d.phase !== 'running') return;
   if (d.phase === 'running') {
     d.endedAt = Date.now();
@@ -202,6 +208,8 @@ function demoStop() {
 }
 function demoReset() {
   const d = state.demo;
+  if (d.competition && ['armed', 'running'].includes(d.phase)) finishDemoCompetition(false);
+  d.competition = false;
   d.phase = 'idle'; d.startedAt = null; d.endedAt = null; d.claps = []; d.nextClapAt = 0;
   syncDemoStatus();
 }
@@ -219,6 +227,7 @@ function demoTick() {
 
 function apiUrl(path, origin = state.origin) { return `${origin.replace(/\/$/, '')}${path}`; }
 function apiTimeout(path) {
+  if (path === '/api/competition/results') return 30000;
   if (path === '/api/sessions') return 15000;
   if (path.startsWith('/api/sessions/')) return 30000;
   return 4000;
@@ -279,10 +288,12 @@ async function syncTime(version) {
   }
 }
 function acceptStatus(result, version) {
+  const ended = result.mode === 'competition' && result.state === 'finished' && state.status.state !== 'finished';
   const reconnected = !state.connectionOk;
   state.status = { ...blankStatus(), ...result };
   if (result.config) adoptConfig(result.config);
   state.connectionOk = true;
+  if (ended) { void refreshRanking(); void refreshHistory(); }
   if (reconnected) {
     void fetchConfig();
     void refreshHistory();
@@ -340,6 +351,7 @@ function applySource() {
   }
   state.origin = origin.replace(/\/$/, '');
   state.source = choice;
+  state.ranking = null; state.rankingRequest++;
   state.sourceVersion++;
   state.pollBusy = false;
   resetTimeSync();
@@ -398,7 +410,7 @@ function renderHistory() {
   $('history-empty').hidden = sessions.length > 0;
   sessions.forEach(session => {
     const row = document.createElement('tr');
-    [prettyDate(session.started_at), prettyTime(session.duration_ms), String(numeric(session.clap_count)), PL.format(numeric(session.cps))].forEach(text => {
+    [`${session.mode === 'competition' ? `Konkurs: ${session.player} (${session.competition_duration_ms / 1000}s, ${session.completed ? 'ukończony' : 'przerwany'}) — ` : ''}${prettyDate(session.started_at)}`, prettyTime(session.duration_ms), String(numeric(session.clap_count)), PL.format(numeric(session.cps))].forEach(text => {
       const cell = document.createElement('td'); cell.textContent = text; row.append(cell);
     });
     const action = document.createElement('td');
@@ -492,6 +504,10 @@ function init() {
   if (Array.isArray(previous)) state.history = previous;
   $('api-origin').value = state.origin;
   document.querySelectorAll('.nav-button').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.view)));
+  $('competition-form').addEventListener('submit', startCompetition);
+  $('competition-stop').addEventListener('click', () => control('stop'));
+  $('competition-duration').addEventListener('change', renderCompetition);
+  $('refresh-ranking').addEventListener('click', refreshRanking);
   $('btn-start').addEventListener('click', () => control('start'));
   $('btn-stop').addEventListener('click', () => control('stop'));
   $('btn-reset').addEventListener('click', () => control('reset'));
@@ -506,6 +522,93 @@ function init() {
   renderConfigForm(); syncDemoStatus(); renderHistory(); renderConnection();
   setInterval(demoTick, 80);
   void detectDevice();
+}
+
+function competitionActive() { return ['armed', 'running'].includes(state.status.state); }
+async function startCompetition(event) {
+  event.preventDefault();
+  if (competitionActive() || state.competitionBusy) return;
+  const player = $('competition-player').value.trim();
+  const duration_s = Number($('competition-duration').value);
+  if (!player || new TextEncoder().encode(player).length > 80 || /[\x00-\x1f\x7f]/.test(player) || ![10,15,30,60].includes(duration_s)) {
+    notify('Podaj nazwę (1–80 bajtów UTF-8) i poprawny czas.', false); return;
+  }
+  if (state.source === 'demo') {
+    const now = performance.now();
+    state.demo = { competition: true, player, duration: duration_s * 1000, phase: 'armed',
+      countdownEnd: now + 3000, start: now + 3450, end: now + 3450 + duration_s * 1000,
+      startedAt: new Date(Date.now() + 3450).toISOString(), claps: [], next: now + 3600, completed: false };
+    syncCompetitionDemo(); return;
+  }
+  if (!state.connectionOk) return;
+  const version = state.sourceVersion;
+  state.competitionBusy = true; renderCompetition();
+  try {
+    await api('/api/competition/start', 'POST', { player, duration_s });
+    if (isCurrent(version)) await pollStatus();
+  } catch (error) { if (isCurrent(version)) notify('Start konkursu: ' + error.message, false); }
+  finally { state.competitionBusy = false; renderCompetition(); }
+}
+function syncCompetitionDemo() {
+  const d = state.demo, now = performance.now();
+  const elapsed = d.phase === 'armed' ? 0 : Math.max(0, Math.min(d.duration, (d.stopped ?? now) - d.start));
+  state.status = { ...blankStatus(), mode: 'competition', state: d.phase, player: d.player,
+    competition_duration_ms: d.duration, completed: d.completed, elapsed_ms: elapsed,
+    remaining_ms: d.phase === 'armed' ? d.duration : Math.max(0, d.duration - elapsed),
+    countdown: d.phase === 'armed' ? Math.max(0, Math.ceil((d.countdownEnd - now) / 1000)) : 0,
+    clap_count: d.claps.length, cps: elapsed ? d.claps.length * 1000 / elapsed : 0 };
+  renderStatus();
+}
+function competitionDemoTick() {
+  const d = state.demo, now = performance.now();
+  if (!['armed','running'].includes(d.phase)) return;
+  if (now >= d.start) d.phase = 'running';
+  while (d.phase === 'running' && d.next <= now && d.next < d.end) {
+    d.claps.push({ offset_ms: d.next - d.start }); d.next += 180 + Math.floor(Math.random() * 200);
+  }
+  if (now >= d.end) finishDemoCompetition(true); else syncCompetitionDemo();
+}
+function finishDemoCompetition(completed) {
+  const d = state.demo;
+  if (!['armed','running'].includes(d.phase)) return;
+  d.stopped = Math.min(performance.now(), d.end); d.completed = completed || performance.now() >= d.end;
+  d.phase = 'finished';
+  const duration = Math.max(0, d.stopped - d.start);
+  const session = { ...buildSession('demo-' + Date.now(), d.startedAt, d.claps.map(c=>c.offset_ms), duration),
+    mode: 'competition', player: d.player, competition_duration_ms: d.duration, completed: d.completed };
+  state.history.unshift(session); writeLocal('claplab-demo-history', state.history);
+  syncCompetitionDemo(); renderHistory(); renderCompetition();
+}
+async function refreshRanking() {
+  if (state.source === 'demo') { renderCompetition(); return; }
+  const version = state.sourceVersion, request = ++state.rankingRequest;
+  state.ranking = null; renderCompetition();
+  try {
+    const result = await api('/api/competition/results');
+    if (!isCurrent(version) || request !== state.rankingRequest) return;
+    if (result.complete !== true || !Array.isArray(result.results)) throw Error('Niepełny ranking');
+    state.ranking = result.results;
+  } catch (error) { if (isCurrent(version) && request === state.rankingRequest) notify('Ranking niedostępny: ' + error.message, false); }
+  if (isCurrent(version)) renderCompetition();
+}
+function renderCompetition() {
+  const s = state.status, comp = s.mode === 'competition', active = competitionActive();
+  const offline = state.source === 'esp32' && !state.connectionOk;
+  $('competition-start').disabled = active || offline || state.competitionBusy;
+  $('competition-start').textContent = comp && s.state === 'finished' ? 'Kolejna próba' : 'Start';
+  $('competition-stop').disabled = !comp || !active || offline;
+  $('competition-player').disabled = active;
+  $('competition-time').textContent = comp && s.state === 'armed' ? (s.countdown ? String(s.countdown) : 'Sygnał / ochrona') : prettyTime(comp ? s.remaining_ms : Number($('competition-duration').value)*1000);
+  $('competition-count').textContent = comp ? String(s.clap_count) : '0';
+  $('competition-message').textContent = offline ? 'Brak połączenia. Konkurs działa na ESP32; dane nieaktualne.' : comp ?
+    s.state === 'finished' ? s.completed ? 'Zakończono: ' + s.player + ' — ' + s.clap_count + ' klaśnięć. Wynik zapisany.' : 'Próba przerwana — poza rankingiem.' : s.state === 'armed' ? 'Przygotowanie: ' + s.player : 'Pomiar: ' + s.player : 'Gotowość';
+  const demo = state.source === 'demo', results = demo ? state.history : state.ranking;
+  $('ranking-caption').textContent = (demo ? 'DEMO — symulowane wyniki zapisane w tej przeglądarce. ' : results ? 'ESP32 — wszystkie zapisane ukończone próby. ' : 'ESP32 — pełny ranking niedostępny. ') + $('competition-duration').value + ' s; remisy mają wspólne miejsce.';
+  const root = $('competition-ranking'); root.replaceChildren();
+  const rows = (results || []).filter(r => r.mode === 'competition' && r.completed === true && r.competition_duration_ms === Number($('competition-duration').value)*1000).sort((a,b)=>b.clap_count-a.clap_count || String(a.id).localeCompare(String(b.id)));
+  let rank = 0;
+  rows.forEach((r,i)=>{ if (!i || r.clap_count !== rows[i-1].clap_count) rank = i+1;
+    const li = document.createElement('li'); li.value = rank; li.textContent = r.player + ': ' + r.clap_count + ' klaśnięć'; root.append(li); });
 }
 
 init();

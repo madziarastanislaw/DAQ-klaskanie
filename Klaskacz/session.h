@@ -21,6 +21,10 @@ struct Clap {
 };
 
 struct Session {
+  bool competition = false, completed = false, stopping = false, resetAfter = false;
+  String player;
+  uint32_t competition_ms = 0;
+  uint64_t countdownEnd_us = 0, end_us = 0;
   uint32_t id = 0;
   SessionState state = S_IDLE;
   uint64_t t0_us = 0, stop_us = 0;
@@ -67,6 +71,9 @@ uint32_t sessionNextId() {
 }
 
 void sessionClear() {   // id zostaje (dane ostatniej sesji sa w pamieci flash)
+  S.competition = S.completed = S.stopping = S.resetAfter = false;
+  S.player = ""; S.competition_ms = 0;
+  S.countdownEnd_us = S.end_us = 0;
   S.state = S_IDLE;
   S.t0_us = S.stop_us = 0;
   S.count = S.flushed = 0;
@@ -76,7 +83,11 @@ void sessionClear() {   // id zostaje (dane ostatniej sesji sa w pamieci flash)
 
 // ---------- statystyki ----------
 uint32_t sessionElapsedMs() {
-  if (S.state == S_RUNNING)  return (uint32_t)((esp_timer_get_time() - S.t0_us) / 1000ULL);
+  if (S.state == S_RUNNING) {
+    uint64_t now = esp_timer_get_time();
+    if (S.competition && now > S.end_us) now = S.end_us;
+    return now > S.t0_us ? (uint32_t)((now - S.t0_us) / 1000ULL) : 0;
+  }
   if (S.state == S_FINISHED) return (uint32_t)((S.stop_us - S.t0_us) / 1000ULL);
   return 0;
 }
@@ -114,6 +125,17 @@ void storageFlush() {
 
 // Wypelnia podsumowanie biezacej sesji (te same klucze trafiaja do /m<id>.json)
 void sessionFillMeta(JsonDocument& d) {
+  d["mode"] = S.competition ? "competition" : "normal";
+  d["player"] = S.player;
+  d["competition_duration_ms"] = S.competition_ms;
+  d["completed"] = S.completed;
+  if (S.t0_us && S.t0_us != UINT64_MAX) {
+    d["window_start_us"] = S.t0_us;
+    d["window_end_us"] = S.end_us;
+  } else {
+    d["window_start_us"] = nullptr;
+    d["window_end_us"] = nullptr;
+  }
   d["clap_count"] = S.count;
   d["duration_ms"] = sessionElapsedMs();
   if (S.count > 1) d["avg_interval_ms"] = sessionAvgMs();
@@ -143,13 +165,14 @@ void sessionBegin(uint64_t t0_us) {       // IDLE/ARMED -> RUNNING
 }
 
 void sessionFinish() {                    // RUNNING -> FINISHED + zapis do pamieci
-  S.stop_us = esp_timer_get_time();
+  S.stop_us = S.competition ? (S.t0_us ? S.end_us : 0) : esp_timer_get_time();
   S.state = S_FINISHED;
   storageFlush();
   sessionSaveMeta();
 }
 
 void sessionAddClap(const ClapEvent& ev) {
+  if (S.competition && (!S.t0_us || ev.t_us < S.t0_us || ev.t_us >= S.end_us)) return;
   uint32_t t = (uint32_t)((ev.t_us - S.t0_us) / 1000ULL);
   Clap& c = S.claps[S.count % MAX_CLAPS_RAM];
   c.t_ms = t; c.peak = ev.peak; c.interval_ms = 0;
