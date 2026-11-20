@@ -25,6 +25,8 @@
 #define MAX_CLAPS_RAM     2000          // ile ostatnich klasniec trzymamy w RAM
 #define FLASH_BATCH       50            // zapis do LittleFS co N klasniec
 #define REFRACTORY_MS     25            // minimalny odstep miedzy klasnieciami
+// Capacity for a full 60 s competition at the current detector rate.
+#define CLAP_QUEUE_SIZE   (60000 / REFRACTORY_MS + 64)
 #define STATUS_INTERVALS  50            // ile ostatnich odstepow w /api/status
 #define AUTO_STOP_MS      0             // 0 = wylaczone; np. 10000 = stop po 10 s ciszy
 #define LONG_PRESS_MS     1500
@@ -33,10 +35,10 @@
 #define AUDIO_BLOCK       256           // 16 ms - rozdzielczosc detekcji i czasu
 #define FFT_N             1024          // okno FFT (potega 2) - liczone tylko przy kandydacie na klasniecie
 #define BASELINE_ADAPTATION    0.05f      
-#define BASELINE_MULT     4.0f          // tryb auto: prog = tlo * MULT
+#define BASELINE_MULT     2.0f          // tryb auto: prog = tlo * MULT
 #define AUTO_MIN_THR      100.0f        // dolne ograniczenie progu auto
 #define WARMUP_BLOCKS     60            // ~1 s po starcie: uczenie tla, bez detekcji
-#define CLAP_FREQ_MIN_HZ  100             // bramka czestotliwosci dominujacej (0..8000 = wylaczona)
+#define CLAP_FREQ_MIN_HZ  100             
 #define CLAP_FREQ_MAX_HZ  3000
 #define BUZZER_GUARD_MS   150           // tyle ms po pisku ignorujemy detekcje (buzzer != klasniecie)
 

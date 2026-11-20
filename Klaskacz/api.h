@@ -9,6 +9,8 @@
 #include <ESPmDNS.h>
 
 void handleCommand(Cmd c);   // z .ino
+void startCompetition(const String& player, uint32_t seconds);
+bool sessionActive();
 void configSave();           // z .ino
 
 WebServer server(80);
@@ -44,6 +46,7 @@ void handleConfigWrite() {   // PUT i POST
   JsonDocument d;
   if (deserializeJson(d, server.arg("plain"))) { sendError(400, "bad json"); return; }
 
+  if (S.competition && sessionActive()) { sendError(409, "competition active"); return; }
   bool autoS = gAutoSens; int thr = gThrUi; StartMode sm = gStartMode;
   if (!d["sensitivity"].isNull()) {
     String s = d["sensitivity"].as<String>();
@@ -68,6 +71,13 @@ void handleConfigWrite() {   // PUT i POST
 // /api/status
 void sendStatus() {
   JsonDocument d;
+  sessionFillMeta(d);
+  uint64_t now = esp_timer_get_time();
+  d["countdown"] = S.competition && S.state == S_ARMED && now < S.countdownEnd_us
+    ? (S.countdownEnd_us - now + 999999) / 1000000 : 0;
+  d["remaining_ms"] = S.competition ? (S.state == S_ARMED ? S.competition_ms :
+    (S.state == S_RUNNING && S.end_us > now ? (S.end_us - now + 999) / 1000 : 0)) : 0;
+  d["stopping"] = S.stopping;
   d["state"] = stateName(S.state);
   d["elapsed_ms"] = sessionElapsedMs();
   d["clap_count"] = S.count;
@@ -97,7 +107,25 @@ void sendStatus() {
 }
 
 // /api/session/* 
-void sessionCmd(Cmd c) { handleCommand(c); sendOk(); }
+void sessionCmd(Cmd c) {
+  if (c == CMD_START && sessionActive()) { sendError(409, "session active"); return; }
+  handleCommand(c); sendOk();
+}
+bool competitionDuration(int s) { return s == 10 || s == 15 || s == 30 || s == 60; }
+void competitionStartApi() {
+  if (sessionActive()) { sendError(409, "session active"); return; }
+  JsonDocument d;
+  if (deserializeJson(d, server.arg("plain"))) { sendError(400, "bad json"); return; }
+  if (!d["player"].is<String>()) { sendError(400, "player required"); return; }
+  String player = d["player"].as<String>(); player.trim();
+  if (player.isEmpty() || player.length() > 80) { sendError(400, "player: 1-80 UTF-8 bytes"); return; }
+  for (unsigned i = 0; i < player.length(); ++i)
+    if ((uint8_t)player[i] < 32 || (uint8_t)player[i] == 127) { sendError(400, "invalid player"); return; }
+  if (!d["duration_s"].isNull() && !d["duration_s"].is<int>()) { sendError(400, "invalid duration"); return; }
+  int seconds = d["duration_s"] | 15;
+  if (!competitionDuration(seconds)) { sendError(400, "duration: 10|15|30|60"); return; }
+  startCompetition(player, seconds); sendOk();
+}
 
 // /api/time
 void handleTimeSync() {
@@ -121,6 +149,10 @@ bool loadMeta(uint32_t id, JsonDocument& m) {
 }
 
 void fillSummary(JsonObject o, uint32_t id, JsonDocument& m) {
+  o["mode"] = m["mode"] | "normal";
+  o["player"] = m["player"] | "";
+  o["competition_duration_ms"] = m["competition_duration_ms"] | 0;
+  o["completed"] = m["completed"] | false;
   o["id"] = String("session-") + id;
   int64_t e = resolveStartEpoch(m["epoch_s"].as<int64_t>(), m["uptime_ms"].as<uint32_t>(), m["boot"].as<uint32_t>());
   if (e > 0) { char ts[24]; isoFromEpoch(e, ts, sizeof ts); o["started_at"] = String(ts); }
@@ -196,6 +228,30 @@ void sendSessionDetail() {
   server.sendContent("");                   // koniec chunked
 }
 
+// Stream ALL persisted completed trials; never derive ranking from the 50-item history.
+void sendCompetitionResults() {
+  sendCors(); server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+  server.sendContent("{\"complete\":true,\"results\":[");
+  File root = LittleFS.open("/"); File f = root.openNextFile(); bool first = true;
+  while (f) {
+    String name = f.name(); f.close();
+    int slash = name.lastIndexOf('/'); if (slash >= 0) name = name.substring(slash + 1);
+    unsigned long id;
+    if (name.startsWith("m") && name.endsWith(".json") && sscanf(name.c_str(), "m%lu.json", &id) == 1) {
+      JsonDocument m;
+      if (loadMeta(id, m) && m["mode"] == "competition" && m["completed"] == true) {
+        JsonDocument row; fillSummary(row.to<JsonObject>(), id, m);
+        String json; serializeJson(row, json);
+        if (!first) server.sendContent(","); first = false;
+        server.sendContent(json);
+      }
+    }
+    f = root.openNextFile();
+  }
+  root.close(); server.sendContent("]}"); server.sendContent("");
+}
+
 String mimeFor(const String& p) {
   if (p.endsWith(".html")) return "text/html";
   if (p.endsWith(".css"))  return "text/css";
@@ -216,6 +272,8 @@ bool serveFile(String path) {
 }
 
 void wifiInitRoutes() {
+  server.on("/api/competition/start", HTTP_POST, competitionStartApi);
+  server.on("/api/competition/results", HTTP_GET, sendCompetitionResults);
   server.on("/api/status",  HTTP_GET, sendStatus);
   server.on("/api/config",  HTTP_GET, sendConfig);
   server.on("/api/config",  HTTP_PUT, handleConfigWrite);

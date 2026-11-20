@@ -588,3 +588,6 @@ tr:last-child td { border-bottom: 0; }
   .hero-actions { width: 100%; }
   .hero-actions .button { width: auto; }
 }
+
+#competition-ranking { overflow-wrap: anywhere; }
+@media (max-width: 500px) { .nav-button { padding: 9px 3px; font-size: 12px; } }

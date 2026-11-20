@@ -20,6 +20,7 @@
 
       <nav class="nav" aria-label="Sekcje">
         <button type="button" class="nav-button active" data-view="live" aria-current="page">Pomiar</button>
+        <button type="button" class="nav-button" data-view="competition">Konkurs</button>
         <button type="button" class="nav-button" data-view="history">Historia</button>
         <button type="button" class="nav-button" data-view="settings">Ustawienia</button>
       </nav>
@@ -36,6 +37,18 @@
 
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 
+      <section id="view-competition" class="view" hidden aria-labelledby="competition-heading">
+        <div class="heading-row"><div><h1 id="competition-heading">Konkurs</h1><p class="subtext">Odliczanie 3, 2, 1; pomiar po sygnale i czasie ochronnym buzzera.</p></div></div>
+        <form id="competition-form" class="card settings-card">
+          <label class="field">Uczestnik<input id="competition-player" type="text" maxlength="80" required value="Gracz 1"><small>Od 1 do 80 bajtów UTF-8, bez znaków sterujących.</small></label>
+          <label class="field">Limit czasu<select id="competition-duration"><option value="10">10 s</option><option value="15" selected>15 s</option><option value="30">30 s</option><option value="60">60 s</option></select></label>
+          <div class="hero-actions"><button id="competition-start" class="button button-primary" type="submit">Start</button><button id="competition-stop" class="button" type="button">Stop</button></div>
+          <p id="competition-message" role="status" aria-live="polite">Gotowość</p>
+          <div class="big-time" id="competition-time">00:15.00</div>
+          <div class="stat">Klaśnięcia: <strong id="competition-count">0</strong></div>
+        </form>
+        <div class="card settings-card"><h2>Ranking prób</h2><p id="ranking-caption">Wyniki dla wybranego limitu czasu.</p><button id="refresh-ranking" type="button" class="button">Odśwież ranking</button><ol id="competition-ranking"></ol></div>
+      </section>
       <section id="view-live" class="view" aria-labelledby="live-heading">
         <div class="heading-row">
           <div>
