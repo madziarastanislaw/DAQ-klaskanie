@@ -1,0 +1,11 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"script",
+	"author":	"",
+	"description":	{
+		"":	"Two-part 100x100x60 test case showing the M3 screw + captive nut coupling (decisions.md D2)"
+	},
+	"version":	"",
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}

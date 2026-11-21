@@ -1,0 +1,11 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"script",
+	"author":	"",
+	"description":	{
+		"":	"Target case 140x120x80 with coupling and component mounts (decisions.md)"
+	},
+	"version":	"",
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}
