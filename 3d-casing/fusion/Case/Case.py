@@ -2,15 +2,16 @@
 #
 # Conventions: U=+Z (top panel), D=-Z (floor), N=+Y, S=-Y, E=+X, W=-X.
 #
-# - 150 x 120 x 80 mm, 2 mm walls, 5 mm radius on the vertical edges (D0, D4, D9)
-# - bottom half 20 mm tall with 3.4 mm side walls + lip; top half 2 mm walls (D2)
+# v2 = print v1 review applied (D14: C1..C5)
+# - 170 x 120 x 80 mm, 2 mm walls, 5 mm radius on the vertical edges (D0, D4, D9, D14-C3)
+# - bottom half 20 mm tall with 3.4 mm side walls + lip on all 4 sides; top half 2 mm walls (D2, D14-C2)
 # - 4 corner coupling bosses: M3x10 from D into captive nuts in the top half (D2)
 # - Wemos 18650 Battery Shield V3 bolted to D (D10):
-#     ports (micro USB, switch) on S, USB-A to E, pushed W up to the SW boss,
+#     ports (micro USB, switch) on S, USB-A to E, pushed W up to the SW boss (stays put vs the W wall),
 #     standoffs with captive nuts in the floor, screws from above
-# - breadboard platform: centred 80 x 40 x 30 frame of 2 mm walls on D (D11)
+# - breadboard platform: two centred 20 x 40 x 30 boxes of 2 mm walls, 50 mm gap E-W (D14-C4)
 # - buzzer: vertical mount wall on D, 15 mm from the N wall, N-S screw, sound hole in N (D12)
-# - top panel U: mic (S-centre, M2.5 inserts), 4 buttons (W, glued), OLED (E, M3) (D13)
+# - top panel U: mic (S-centre, M2.5 inserts), 4 buttons (W, glued), OLED (E, M3, corner supports) (D13, D14-C5)
 # - optional: imports the component STEP models to check the fit
 #
 # Run in Fusion: Utilities > Add-Ins > Scripts and Add-Ins > "+" > Script from my computer
@@ -22,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 COMPONENTS_DIR = os.path.normpath(os.path.join(HERE, '..', '..', 'outside_components'))
 
 # ---- Case (mm) ----
-LENGTH = 150.0      # X  (W -> E)
+LENGTH = 170.0      # X  (W -> E)   v1: 150 (D14-C3)
 WIDTH = 120.0       # Y  (S -> N)
 HEIGHT = 80.0       # Z  (D -> U)
 RADIUS = 5.0        # vertical edge rounding (outer)
@@ -55,8 +56,10 @@ SH_POST_D = 6.5         # post diameter (clears the micro USB by ~0.9 mm)
 SH_NUT_POCKET = 3.0     # hex pocket depth from the outer D face
 SH_SWITCH_CLR = 0.3     # switch face -> S inner wall
 SH_BOSS_CLR = 1.0       # PCB W edge -> SW coupling boss
-USB_CUT = (12.0, 8.0)   # micro USB opening (X x Z): fits the plug overmold
-SW_CUT = (11.0, 4.5)    # switch slot (X x Z)
+USB_CUT = (16.0, 12.0)  # micro USB opening (X x Z), centred on the port; bottom clipped at the floor top (D14-C1)
+SW_CUT_W = 21.0         # switch slot width (X); its height = the clipped micro USB height (D14-C1)
+PORT_SHIFT_X = 1.0      # both S openings moved this much E of the port / switch (D14-C1)
+PORT_CUT_IN = 0.1       # S openings: cut only this far past the inner wall face (spares standoffs / nut pocket)
 
 # Shield model geometry (its own STEP frame, mm):
 #   PCB x 0.7..30.0 (width), z 0..99.3 (length), y 0..1.6 (thickness, cell on +y)
@@ -67,7 +70,8 @@ M_SWITCH_Y, M_SWITCH_Z = (1.6, 5.1), (8.91, 17.91)
 M_USB_Y, M_USB_Z = (-2.6, 0.8), (85.36, 93.14)
 
 # ---- Breadboard platform (D11) ----
-PF_L, PF_W = 80.0, 40.0   # outer footprint (X x Y), centred in the case
+PF_L, PF_W = 20.0, 40.0   # outer footprint of EACH box (X x Y)  (D14-C4)
+PF_GAP = 50.0             # free gap between the two boxes (X); pair centred in the case
 PF_H = 30.0               # height above the floor top -> breadboard glued at Z = WALL + PF_H
 PF_T = 2.0                # wall thickness
 
@@ -111,13 +115,18 @@ BTN_BODY = 12.0               # square body
 BTN_FRAME_CLR, BTN_FRAME_T, BTN_FRAME_H = 0.2, 1.2, 2.0
 M_BTN_BODY_TOP = 3.6          # model: body top (actuator side) at y = 3.6
 
-# OLED (D6): E side. PCB flat against U, glass sits inside the window (no standoffs).
-OLED_STEP = os.path.join(COMPONENTS_DIR, 'OLED Display 128x64.STEP')
-OLED_X, OLED_Y = 42.0, 5.0    # PCB centre
-OLED_HOLES = [(18.7, 16.375), (-18.7, 16.375), (-18.7, -16.375), (18.7, -16.375)]  # rel. to centre
-OLED_GLASS = (42.0, 27.2)
-OLED_WIN_CLR = 0.2            # per side around the glass
-M_OLED_PCB_TOP = 1.2          # model: PCB top face (glass side) at z = 1.2
+# OLED (D6, D14-C5): E side. Measured module: PCB 34.5 x 32, glass 34 x 23 (assumed centred on the PCB).
+# PCB rests on 4 corner supports, screen sits ~ level with the U inner face.
+OLED_X, OLED_Y = 42.0, 5.0      # PCB centre
+OLED_PCB = (34.5, 32.0, 1.2)    # X, Y, thickness (thickness from the v1 model)
+OLED_GLASS = (34.0, 23.0, 1.9)  # X, Y, height above the PCB (height from the v1 model)
+OLED_WIN_CLR = 0.2              # per side around the glass
+OLED_HOLE_IN = 2.5              # screw hole: inward along X from its cutout corner (as v1)
+OLED_HOLE_OUT = 2.575           # screw hole: outward along Y from its cutout corner (as v1)
+OLED_SUP_H = 2.0                # corner supports: height below the U inner face
+OLED_SUP_IN = 8.0               # supports end this far inside the nearest E/W cutout side
+OLED_SUP_PAST = 0.5             # supports run this far past the PCB edge (into the frame wall)
+OLED_FRAME_CLR, OLED_FRAME_T, OLED_FRAME_H = 0.2, 1.2, 3.0   # locating frame around the PCB (like the buttons)
 
 # ---- Export for printing ----
 EXPORT_PRINT = True     # write Bottom / Top as STL into 3d-casing/print/
@@ -334,7 +343,12 @@ def run(context):
         sk = sketch_at(SPLIT, 'Lip boss clearance')
         circles(sk, bosses, BOSS_D + 2 * LIP_BOSS_CLR)
         combine(lip, bodies_of(extrude(all_profiles(sk), LIP_H, NEW)), CUT)
-        combine(bottom, [thick, lip], JOIN)
+        # the boss cut splits the lip into 4 pieces (one per side): join them all (v1 joined only W, D14-C2)
+        lip_pieces = [b for b in root.bRepBodies
+                      if b.name not in ('Bottom', 'Top') and abs(b.boundingBox.minPoint.z - SPLIT / 10.0) < 1e-4]
+        if len(lip_pieces) != 4:
+            ui.messageBox(f'Lip: expected 4 pieces, got {len(lip_pieces)}.')
+        combine(bottom, [thick] + lip_pieces, JOIN)
 
         sk = sketch_at(0, 'Coupling counterbores')
         circles(sk, bosses, CBORE_D)
@@ -381,20 +395,27 @@ def run(context):
         extrude(all_profiles(sk), WALL + SH_STANDOFF, CUT, [bottom])
 
         # S wall openings: micro USB + switch
-        usb_x = -(M_USB_Z[0] + M_USB_Z[1]) / 2.0 + ox
-        usb_z = (M_USB_Y[0] + M_USB_Y[1]) / 2.0 + oz
-        sw_x = -(M_SWITCH_Z[0] + M_SWITCH_Z[1]) / 2.0 + ox
+        usb_x = -(M_USB_Z[0] + M_USB_Z[1]) / 2.0 + ox + PORT_SHIFT_X
+        usb_zc = (M_USB_Y[0] + M_USB_Y[1]) / 2.0 + oz
+        usb_z0 = max(usb_zc - USB_CUT[1] / 2.0, WALL)          # never into the floor
+        usb_z1 = usb_zc + USB_CUT[1] / 2.0
+        cut_h = usb_z1 - usb_z0
+        sw_x = -(M_SWITCH_Z[0] + M_SWITCH_Z[1]) / 2.0 + ox + PORT_SHIFT_X
         sw_z = (M_SWITCH_Y[0] + M_SWITCH_Y[1]) / 2.0 + oz
-        y_mid = -WIDTH / 2.0 + BOTTOM_WALL / 2.0
-        wall_cut(y_mid, [(usb_x, usb_z) + USB_CUT, (sw_x, sw_z) + SW_CUT],
-                 BOTTOM_WALL + 2.0, bottom, 'S wall openings')
+        # from 1 mm outside the outer face to PORT_CUT_IN past the inner face
+        y_out, y_in = -WIDTH / 2.0 - 1.0, -WIDTH / 2.0 + BOTTOM_WALL + PORT_CUT_IN
+        wall_cut((y_out + y_in) / 2.0,
+                 [(usb_x, (usb_z0 + usb_z1) / 2.0, USB_CUT[0], cut_h), (sw_x, sw_z, SW_CUT_W, cut_h)],
+                 y_in - y_out, bottom, 'S wall openings')
 
         # ================= BREADBOARD PLATFORM (D11) =================
-        # open rectangular frame of walls on the floor; breadboard is glued on its top rim
+        # two open boxes of walls on the floor; breadboard is glued on their top rims
         sk = sketch_at(WALL, 'Breadboard platform')
         rects = sk.sketchCurves.sketchLines
-        rects.addCenterPointRectangle(P(0, 0), P(PF_L / 2.0, PF_W / 2.0))
-        rects.addCenterPointRectangle(P(0, 0), P(PF_L / 2.0 - PF_T, PF_W / 2.0 - PF_T))
+        for sx in (-1, 1):
+            cx = sx * (PF_GAP + PF_L) / 2.0
+            rects.addCenterPointRectangle(P(cx, 0), P(cx + PF_L / 2.0, PF_W / 2.0))
+            rects.addCenterPointRectangle(P(cx, 0), P(cx + PF_L / 2.0 - PF_T, PF_W / 2.0 - PF_T))
         areas = [p.areaProperties().area * 100.0 for p in sk.profiles]
         extrude(profiles_by_area(sk, lambda a: a <= min(areas) + 1e-6), PF_H, JOIN, [bottom])
 
@@ -482,11 +503,30 @@ def run(context):
         ring_area = (fi + 2 * BTN_FRAME_T) ** 2 - fi ** 2
         extrude(profiles_by_area(sk, lambda a: a <= ring_area * 1.01), BTN_FRAME_H, JOIN, [top])
 
-        # --- OLED: window for the glass + 4 M3 through holes ---
-        oled_holes = [(OLED_X + x, OLED_Y + y) for x, y in OLED_HOLES]
-        through_u(lambda s: rect_c(s, OLED_X, OLED_Y, OLED_GLASS[0] + 2 * OLED_WIN_CLR,
-                                   OLED_GLASS[1] + 2 * OLED_WIN_CLR), 'OLED window')
-        through_u(lambda s: circles(s, oled_holes, HOLE_D), 'OLED screw holes')
+        # --- OLED: window for the glass, 4 corner supports, 4 M3 through holes (D14-C5) ---
+        win_x = OLED_GLASS[0] / 2.0 + OLED_WIN_CLR       # window half sizes
+        win_y = OLED_GLASS[1] / 2.0 + OLED_WIN_CLR
+        oled_holes = [(OLED_X + sx * (win_x - OLED_HOLE_IN), OLED_Y + sy * (win_y + OLED_HOLE_OUT))
+                      for sx in (-1, 1) for sy in (-1, 1)]
+        through_u(lambda s: rect_c(s, OLED_X, OLED_Y, 2 * win_x, 2 * win_y), 'OLED window')
+        sup_x0, sup_x1 = win_x - OLED_SUP_IN, OLED_PCB[0] / 2.0 + OLED_SUP_PAST
+        sup_y0, sup_y1 = win_y, OLED_PCB[1] / 2.0 + OLED_SUP_PAST
+        sk = sketch_at(u_in - OLED_SUP_H, 'OLED supports')
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                sk.sketchCurves.sketchLines.addTwoPointRectangle(
+                    P(OLED_X + sx * sup_x0, OLED_Y + sy * sup_y0), P(OLED_X + sx * sup_x1, OLED_Y + sy * sup_y1))
+        extrude(all_profiles(sk), OLED_SUP_H, JOIN, [top])
+        # locating frame around the PCB; the supports run into its wall
+        sk = sketch_at(u_in - OLED_FRAME_H, 'OLED frame')
+        fx, fy = OLED_PCB[0] + 2 * OLED_FRAME_CLR, OLED_PCB[1] + 2 * OLED_FRAME_CLR
+        rect_c(sk, OLED_X, OLED_Y, fx + 2 * OLED_FRAME_T, fy + 2 * OLED_FRAME_T)
+        rect_c(sk, OLED_X, OLED_Y, fx, fy)
+        ring_area = (fx + 2 * OLED_FRAME_T) * (fy + 2 * OLED_FRAME_T) - fx * fy
+        extrude(profiles_by_area(sk, lambda a: a <= ring_area * 1.01), OLED_FRAME_H, JOIN, [top])
+        sk = sketch_at(u_in - OLED_SUP_H - 1.0, 'OLED screw holes')
+        circles(sk, oled_holes, HOLE_D)
+        extrude(all_profiles(sk), OLED_SUP_H + WALL + 2.0, CUT, [top])
 
         # ================= OPTIONAL: hardware + component models =================
         moving = adsk.core.ObjectCollection.create()
@@ -543,6 +583,17 @@ def run(context):
             f = xz_extrude(bz_yn + pcb_t + BZ_BUZ_H / 2.0, [('circle', buz_x, buz_z, BZ_BUZ_D)],
                            BZ_BUZ_H, NEW, None, 'Buzzer (dummy)')
             f.bodies.item(0).name = 'Buzzer (dummy)'
+            # OLED stand-in (measured module, D14-C5): PCB on the supports, glass toward U
+            oled_pcb_top = u_in - OLED_SUP_H
+            sk = sketch_at(oled_pcb_top - OLED_PCB[2], 'OLED PCB (dummy)')
+            rect_c(sk, OLED_X, OLED_Y, OLED_PCB[0], OLED_PCB[1])
+            circles(sk, oled_holes, HOLE_D)
+            f = extrude(profiles_by_area(sk, lambda a: a > 100.0), OLED_PCB[2], NEW)
+            f.bodies.item(0).name = 'OLED PCB (dummy)'
+            sk = sketch_at(oled_pcb_top, 'OLED glass (dummy)')
+            rect_c(sk, OLED_X, OLED_Y, OLED_GLASS[0], OLED_GLASS[1])
+            f = extrude(sk.profiles.item(0), OLED_GLASS[2], NEW)
+            f.bodies.item(0).name = 'OLED glass (dummy)'
             for s in root.sketches:
                 s.isVisible = False
 
@@ -574,9 +625,6 @@ def run(context):
             # mic: flipped (rotate 180° about X), PCB underside at mic_pcb_z
             import_step(MIC_STEP, matrix([(1, 0, 0), (0, -1, 0), (0, 0, -1)],
                                          (MIC_X - M_MIC_C[0], MIC_Y + M_MIC_C[1], mic_pcb_z + 1.51)))
-            # OLED: PCB top face against U
-            import_step(OLED_STEP, matrix([(1, 0, 0), (0, 1, 0), (0, 0, 1)],
-                                          (OLED_X, OLED_Y, u_in - M_OLED_PCB_TOP)))
             # buttons: model +y (actuator) -> +Z, body top against U
             rot = [(1, 0, 0), (0, 0, -1), (0, 1, 0)]
             first = import_step(BUTTON_STEP, matrix(rot, (btns[0][0], btns[0][1], u_in - M_BTN_BODY_TOP)))

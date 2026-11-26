@@ -1,3 +1,4 @@
+
 #pragma once
 // Struktura sesji, statystyki, zapis CSV + metadanych do LittleFS.
 // Pliki na sesje: /s<id>.csv (klasniecia), /m<id>.json (podsumowanie, zapisywane przy STOP).
