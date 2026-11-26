@@ -75,3 +75,15 @@ The base design (`fusion/Case/`, `print/case_*.stl`) is kept as is.
   ~6.2 mm clear on each side.
 - Prints without supports (top half printed U-down, rib grows upward). Hangs to Z 45 — clear of everything below.
 - D (floor) gets no reinforcement: it rests flat on the table.
+
+---
+
+## A4 — Longer screw-tip holes in the top coupling bosses
+
+**Date:** 2026-11-26
+**Status:** Implemented in `CaseAlt.py` — not yet run in Fusion
+
+- The Ø3.4 hole above each captive nut in the top half's corner bosses now runs up to **10 mm below the outer top face**
+  (Z 22.5 → 40; was 6 mm long, to Z 28.5). Nut pocket unchanged (Z 20..22.5).
+- Allows coupling screws up to ~M3×25 (counterbore floor Z 13.5 − 0.5 washer → 26 mm to the hole end).
+- Prints without supports: the hole is open at the mating face, which is on top when the top half prints U-down.

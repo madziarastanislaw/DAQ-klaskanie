@@ -40,7 +40,8 @@ CBORE_D = 7.6
 CLAMP_LEN = 6.5
 NUT_AF = 5.7
 NUT_POCKET = 2.5
-TIP_CLEAR = 6.0
+TIP_TOP_GAP = 10.0      # A4: screw-tip hole above the nut ends this far below the outer top face
+TIP_CLEAR = HEIGHT - TIP_TOP_GAP - SPLIT - NUT_POCKET   # = 17.5 mm with 50 / 20 / 2.5 (base: 6.0)
 
 # ---- Lip ----
 LIP_H = 2.5
